@@ -1,5 +1,6 @@
 from redbot.core import commands
 import discord
+from discord import app_commands
 from datetime import datetime, timedelta
 import asyncio
 import random
@@ -40,17 +41,29 @@ class ProductCog(commands.Cog):
         with open(self.data_file, 'w') as f:
             json.dump(data, f, indent=4)
 
-    @commands.group(invoke_without_command=True)
-    async def product(self, ctx):
+    @commands.hybrid_group(name="product", invoke_without_command=True)
+    @app_commands.describe(
+        ctx="The command context"
+    )
+    async def product(self, ctx: commands.Context):
         """Product management commands."""
-        embed = discord.Embed(title="Product Commands", description="Manage products with the following commands:", color=discord.Color.blue())
-        embed.add_field(name="Add Product", value="`!product add <name> <quantity> [emoji]`", inline=False)
-        embed.add_field(name="Remove Product", value="`!product remove <name> <quantity>`", inline=False)
+        embed = discord.Embed(
+            title="Product Commands",
+            description="Manage products with the following commands:",
+            color=discord.Color.blue()
+        )
+        embed.add_field(name="Add Product", value="`/product add <name> <quantity> [emoji]`", inline=False)
+        embed.add_field(name="Remove Product", value="`/product remove <name> <quantity>`", inline=False)
         await ctx.send(embed=embed)
 
     @product.command(name='add')
     @commands.has_permissions(administrator=True)
-    async def add_product(self, ctx, name: str, quantity: int, emoji: str = None):
+    @app_commands.describe(
+        name="The name of the product",
+        quantity="The quantity of the product",
+        emoji="Optional emoji to associate with the product"
+    )
+    async def add_product(self, ctx: commands.Context, name: str, quantity: int, emoji: str = None):
         """Add a product to stock with an optional emoji."""
         if name in self.stock:
             self.stock[name]['quantity'] += quantity
@@ -67,7 +80,11 @@ class ProductCog(commands.Cog):
 
     @product.command(name='remove')
     @commands.has_permissions(administrator=True)
-    async def remove_product(self, ctx, name: str, quantity: int):
+    @app_commands.describe(
+        name="The name of the product",
+        quantity="The quantity of the product to remove"
+    )
+    async def remove_product(self, ctx: commands.Context, name: str, quantity: int):
         """Remove a product from stock."""
         if name in self.stock and self.stock[name]['quantity'] >= quantity:
             self.stock[name]['quantity'] -= quantity
@@ -85,8 +102,9 @@ class ProductCog(commands.Cog):
             embed = discord.Embed(title="Error", description="Not enough stock or product not found.", color=discord.Color.red())
             await ctx.send(embed=embed)
 
-    @commands.command(name='stock')
-    async def stock_info(self, ctx):
+    @commands.hybrid_command(name='stock')
+    @app_commands.describe(ctx="The command context")
+    async def stock_info(self, ctx: commands.Context):
         """Show current stock info."""
         if not self.stock:
             embed = discord.Embed(title="Stock Info", description="No products in stock.", color=discord.Color.yellow())
@@ -98,8 +116,16 @@ class ProductCog(commands.Cog):
             embed.add_field(name=f"{product} {info['emoji'] if info['emoji'] else ''}", value=f"Quantity: {info['quantity']}", inline=False)
         await ctx.send(embed=embed)
 
-    @commands.command(name='delivery')
-    async def delivery(self, ctx, user: discord.User, quantity: int, price: float, product: str, *, custom_message: str = None):
+    @commands.hybrid_command(name='delivery')
+    @app_commands.describe(
+        ctx="The command context",
+        user="The user to send the delivery to",
+        quantity="The quantity of the product",
+        price="The price of the product",
+        product="The name of the product",
+        custom_message="An optional custom message"
+    )
+    async def delivery(self, ctx: commands.Context, user: discord.User, quantity: int, price: float, product: str, *, custom_message: str = None):
         """Send a delivery embed and track user purchase with an optional custom message."""
         uuid = f"{random.randint(1000, 9999)}"  # Generate a 4-digit UUID
         if product in self.stock and self.stock[product]['quantity'] >= quantity:
@@ -123,7 +149,7 @@ class ProductCog(commands.Cog):
 
             # Send delivery embed
             embed = discord.Embed(title="Product Delivery", description="Product has been delivered.", color=discord.Color.purple())
-            embed.set_thumbnail(url=self.bot.user.avatar_url)
+            embed.set_thumbnail(url=self.bot.user.avatar.url)
             embed.add_field(name="Product", value=f"**{product}**")
             embed.add_field(name="Quantity", value=f"**{quantity}**")
             embed.add_field(name="Price", value=f"**{price}**")
@@ -135,7 +161,7 @@ class ProductCog(commands.Cog):
 
             # Send DM to user
             dm_embed = discord.Embed(title="Delivery Confirmation", description=f"You have received {quantity} of {product}.", color=discord.Color.green())
-            dm_embed.set_thumbnail(url=self.bot.user.avatar_url)
+            dm_embed.set_thumbnail(url=self.bot.user.avatar.url)
             dm_embed.add_field(name="Product", value=f"**{product}**")
             dm_embed.add_field(name="Quantity", value=f"**{quantity}**")
             dm_embed.add_field(name="Price", value=f"**{price}**")
@@ -150,8 +176,14 @@ class ProductCog(commands.Cog):
             embed = discord.Embed(title="Error", description="Not enough stock or product not found.", color=discord.Color.red())
             await ctx.send(embed=embed)
 
-    @commands.command(name='replace')
-    async def replace_product(self, ctx, user: discord.User, old_product_uuid: str, *, replacement_message: str):
+    @commands.hybrid_command(name='replace')
+    @app_commands.describe(
+        ctx="The command context",
+        user="The user whose product will be replaced",
+        old_product_uuid="The UUID of the product to replace",
+        replacement_message="The message explaining the replacement"
+    )
+    async def replace_product(self, ctx: commands.Context, user: discord.User, old_product_uuid: str, *, replacement_message: str):
         """Replace a suspended user's product using UUID with a new product."""
         old_product_data = self.get_product_data_by_uuid(user, old_product_uuid)
         if old_product_data:
@@ -173,111 +205,53 @@ class ProductCog(commands.Cog):
                 await ctx.send(embed=embed)
 
                 # Send DM to user
-                dm_embed = discord.Embed(title="Product Replacement", description=f"Your product has been replaced due to an account issue.", color=discord.Color.orange())
-                dm_embed.add_field(name="Old Product", value=f"**{old_product}**")
-                dm_embed.add_field(name="Quantity", value=f"**{quantity}**")
+                dm_embed = discord.Embed(title="Product Replacement", description=f"Your product '{old_product}' has been replaced.", color=discord.Color.orange())
                 dm_embed.add_field(name="Replacement Message", value=replacement_message)
                 await user.send(embed=dm_embed)
-
-                await self.log_replacement(ctx, user, old_product, quantity, replacement_message)
             else:
-                embed = discord.Embed(title="Error", description="Not enough stock or old product not found.", color=discord.Color.red())
+                embed = discord.Embed(title="Error", description="Not enough stock or product not found.", color=discord.Color.red())
                 await ctx.send(embed=embed)
         else:
-            embed = discord.Embed(title="Error", description="No matching purchase found for the provided UUID.", color=discord.Color.red())
+            embed = discord.Embed(title="Error", description="UUID not found.", color=discord.Color.red())
             await ctx.send(embed=embed)
 
-    @commands.command(name='schedule')
-    @commands.has_permissions(administrator=True)
-    async def schedule_message(self, ctx, user: discord.User, time: str, *, message: str):
-        """Schedule a DM to a user."""
-        try:
-            # Parse time in minutes
-            minutes = int(time)
-            await ctx.send(f"Message will be sent to {user.mention} in {minutes} minute(s).")
-
-            await asyncio.sleep(minutes * 60)
-
-            dm_embed = discord.Embed(title="Scheduled Message", description=message, color=discord.Color.blue())
-            await user.send(embed=dm_embed)
-            await ctx.send(f"Scheduled message sent to {user.mention}.")
-            await self.log_scheduled_message(ctx, user, message, minutes)
-        except ValueError:
-            await ctx.send("Invalid time format. Please use an integer for minutes.")
-
     def get_product_data_by_uuid(self, user, uuid):
-        """Retrieve a specific product purchase by UUID for a user."""
+        """Retrieve product data by UUID for a specific user."""
         if user.id in self.user_data:
-            for purchase in self.user_data[user.id]:
-                if purchase['uuid'] == uuid:
-                    return purchase
+            for product_data in self.user_data[user.id]:
+                if product_data['uuid'] == uuid:
+                    return product_data
         return None
 
     async def log_stock_change(self, ctx, action, product, quantity):
-        """Log stock changes."""
-        log_channel = self.bot.get_channel(self.log_channels.get("stock"))
-        if log_channel:
-            embed = discord.Embed(title="Stock Log", description=f"{action} stock:", color=discord.Color.blue())
-            embed.add_field(name="Product", value=product)
-            embed.add_field(name="Quantity", value=quantity)
-            embed.add_field(name="Admin", value=ctx.author.mention)
-            embed.timestamp = datetime.utcnow()
-            await log_channel.send(embed=embed)
+        """Log stock changes to the log channel."""
+        if ctx.guild.id in self.log_channels:
+            log_channel = self.bot.get_channel(self.log_channels[ctx.guild.id])
+            if log_channel:
+                embed = discord.Embed(
+                    title="Stock Change",
+                    description=f"Product '{product}' has been {action}.",
+                    color=discord.Color.dark_blue()
+                )
+                embed.add_field(name="Product", value=product)
+                embed.add_field(name="Quantity", value=quantity)
+                embed.add_field(name="Action", value=action)
+                embed.set_footer(text=f"Performed by {ctx.author.name}")
+                await log_channel.send(embed=embed)
 
     async def log_purchase(self, ctx, user, product, quantity, price, uuid):
-        """Log user purchases."""
-        log_channel = self.bot.get_channel(self.log_channels.get("purchase"))
-        if log_channel:
-            embed = discord.Embed(title="Purchase Log", description="A user made a purchase:", color=discord.Color.green())
-            embed.add_field(name="User", value=user.mention)
-            embed.add_field(name="Product", value=product)
-            embed.add_field(name="Quantity", value=quantity)
-            embed.add_field(name="Price", value=price)
-            embed.add_field(name="UUID", value=f"||{uuid}||")
-            embed.timestamp = datetime.utcnow()
-            await log_channel.send(embed=embed)
-
-    async def log_replacement(self, ctx, user, old_product, quantity, replacement_message):
-        """Log product replacements."""
-        log_channel = self.bot.get_channel(self.log_channels.get("replacement"))
-        if log_channel:
-            embed = discord.Embed(title="Replacement Log", description="A product was replaced:", color=discord.Color.orange())
-            embed.add_field(name="User", value=user.mention)
-            embed.add_field(name="Old Product", value=old_product)
-            embed.add_field(name="Quantity", value=quantity)
-            embed.add_field(name="Replacement Message", value=replacement_message)
-            embed.timestamp = datetime.utcnow()
-            await log_channel.send(embed=embed)
-
-    async def log_scheduled_message(self, ctx, user, message, minutes):
-        """Log scheduled messages."""
-        log_channel = self.bot.get_channel(self.log_channels.get("schedule"))
-        if log_channel:
-            embed = discord.Embed(title="Scheduled Message Log", description="A message was scheduled:", color=discord.Color.blue())
-            embed.add_field(name="User", value=user.mention)
-            embed.add_field(name="Message", value=message)
-            embed.add_field(name="Scheduled in", value=f"{minutes} minute(s)")
-            embed.timestamp = datetime.utcnow()
-            await log_channel.send(embed=embed)
-
-    @commands.command(name='setlogchannel')
-    @commands.has_permissions(administrator=True)
-    async def set_log_channel(self, ctx, channel_type: str, channel: discord.TextChannel):
-        """Set the log channel for different log types."""
-        if channel_type.lower() in ["stock", "purchase", "replacement", "schedule"]:
-            self.log_channels[channel_type.lower()] = channel.id
-            self.save_data()
-            await ctx.send(f"Log channel for {channel_type} set to {channel.mention}.")
-        else:
-            await ctx.send("Invalid log channel type. Choose from: stock, purchase, replacement, schedule.")
-
-    @commands.command(name='setrole')
-    @commands.has_permissions(administrator=True)
-    async def set_role(self, ctx, role_type: str, role: discord.Role):
-        """Set roles for different purposes."""
-        if role_type.lower() in ["admin", "user", "mod"]:
-            self.roles[role_type.lower()] = role.id
-            self.save_data()
-            await ctx.send(f"Role for {role_type} set to {role.mention}.")
-        else:
-            await ctx.send("Invalid role type. Choose from: admin, user, mod.")
+        """Log purchases to the log channel."""
+        if ctx.guild.id in self.log_channels:
+            log_channel = self.bot.get_channel(self.log_channels[ctx.guild.id])
+            if log_channel:
+                embed = discord.Embed(
+                    title="Product Purchase",
+                    description=f"{user.name} purchased '{product}'.",
+                    color=discord.Color.dark_green()
+                )
+                embed.add_field(name="User", value=user.mention)
+                embed.add_field(name="Product", value=product)
+                embed.add_field(name="Quantity", value=quantity)
+                embed.add_field(name="Price", value=f"${price}")
+                embed.add_field(name="UUID", value=uuid)
+                await log_channel.send(embed=embed)
