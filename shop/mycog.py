@@ -3,16 +3,42 @@ import discord
 from datetime import datetime, timedelta
 import asyncio
 import random
+import json
+import os
 
 class ProductCog(commands.Cog):
-    """Product management and delivery cog with user data tracking"""
+    """Product management and delivery cog with persistent user data tracking."""
 
     def __init__(self, bot):
         self.bot = bot
-        self.stock = {}
-        self.user_data = {}  # Dictionary to store user purchase data
-        self.roles = {}  # Dictionary to store role permissions
-        self.log_channels = {}  # Dictionary to store logging channels
+        self.data_file = "product_data.json"
+        self.load_data()
+
+    def load_data(self):
+        """Load data from a JSON file."""
+        if os.path.exists(self.data_file):
+            with open(self.data_file, 'r') as f:
+                data = json.load(f)
+                self.stock = data.get("stock", {})
+                self.user_data = data.get("user_data", {})
+                self.roles = data.get("roles", {})
+                self.log_channels = data.get("log_channels", {})
+        else:
+            self.stock = {}
+            self.user_data = {}
+            self.roles = {}
+            self.log_channels = {}
+
+    def save_data(self):
+        """Save data to a JSON file."""
+        data = {
+            "stock": self.stock,
+            "user_data": self.user_data,
+            "roles": self.roles,
+            "log_channels": self.log_channels
+        }
+        with open(self.data_file, 'w') as f:
+            json.dump(data, f, indent=4)
 
     @commands.group(invoke_without_command=True)
     async def product(self, ctx):
@@ -31,6 +57,8 @@ class ProductCog(commands.Cog):
         else:
             self.stock[name] = {'quantity': quantity, 'emoji': emoji}
 
+        self.save_data()
+
         embed = discord.Embed(title="Product Added", description=f"{name} has been added to stock.", color=discord.Color.green())
         embed.add_field(name="Product", value=f"{name} {emoji if emoji else ''}")
         embed.add_field(name="Quantity", value=quantity)
@@ -45,6 +73,8 @@ class ProductCog(commands.Cog):
             self.stock[name]['quantity'] -= quantity
             if self.stock[name]['quantity'] == 0:
                 del self.stock[name]
+
+            self.save_data()
 
             embed = discord.Embed(title="Product Removed", description=f"{name} has been removed from stock.", color=discord.Color.red())
             embed.add_field(name="Product", value=name)
@@ -89,6 +119,8 @@ class ProductCog(commands.Cog):
                 'uuid': uuid
             })
 
+            self.save_data()
+
             # Send delivery embed
             embed = discord.Embed(title="Product Delivery", description="Product has been delivered.", color=discord.Color.purple())
             embed.set_thumbnail(url=self.bot.user.avatar_url)
@@ -132,6 +164,8 @@ class ProductCog(commands.Cog):
                 if self.stock[old_product]['quantity'] == 0:
                     del self.stock[old_product]
 
+                self.save_data()
+
                 embed = discord.Embed(title="Product Replaced", description="User's product has been replaced.", color=discord.Color.orange())
                 embed.add_field(name="Old Product", value=f"**{old_product}**")
                 embed.add_field(name="Quantity", value=f"**{quantity}**")
@@ -159,90 +193,91 @@ class ProductCog(commands.Cog):
         """Schedule a DM to a user."""
         try:
             # Parse time in minutes
-            minutes = int(time.rstrip('min'))
-            scheduled_time = datetime.utcnow() + timedelta(minutes=minutes)
+            minutes = int(time)
+            await ctx.send(f"Message will be sent to {user.mention} in {minutes} minute(s).")
 
-            await ctx.send(f"Message scheduled to be sent to {user} in {minutes} minute(s) at {scheduled_time}.")
             await asyncio.sleep(minutes * 60)
-            dm_embed = discord.Embed(title="Scheduled Message", description=message, color=discord.Color.gold())
-            dm_embed.set_thumbnail(url=self.bot.user.avatar_url)
+
+            dm_embed = discord.Embed(title="Scheduled Message", description=message, color=discord.Color.blue())
             await user.send(embed=dm_embed)
+            await ctx.send(f"Scheduled message sent to {user.mention}.")
+            await self.log_scheduled_message(ctx, user, message, minutes)
         except ValueError:
-            await ctx.send("Invalid time format. Use `Xmin` where X is the number of minutes.")
+            await ctx.send("Invalid time format. Please use an integer for minutes.")
 
-    @commands.command(name='viewuserdata')
-    async def view_user_data(self, ctx, user: discord.User):
-        """View user purchase data."""
-        if user.id in self.user_data:
-            embed = discord.Embed(title=f"{user}'s Purchase History", color=discord.Color.blue())
-            for purchase in self.user_data[user.id]:
-                embed.add_field(
-                    name=f"{purchase['product']} (UUID: ||{purchase['uuid']}||)",
-                    value=f"Quantity: **{purchase['quantity']}** | Price: **{purchase['price']}** | Time: {purchase['time'].strftime('%Y-%m-%d %H:%M:%S UTC')}",
-                    inline=False
-                )
-            await ctx.send(embed=embed)
-        else:
-            embed = discord.Embed(title="No Data", description="No purchase data found for this user.", color=discord.Color.red())
-            await ctx.send(embed=embed)
-
-    @commands.command(name='setroles')
-    @commands.has_permissions(administrator=True)
-    async def set_roles(self, ctx, *roles: discord.Role):
-        """Set roles that have access to product commands."""
-        self.roles = {role.id: role.name for role in roles}
-        role_names = ", ".join(self.roles.values())
-        embed = discord.Embed(title="Roles Updated", description=f"The following roles have access to product commands: {role_names}", color=discord.Color.green())
-        await ctx.send(embed=embed)
-
-    @commands.command(name='setlog')
-    @commands.has_permissions(administrator=True)
-    async def set_log_channel(self, ctx, channel: discord.TextChannel):
-        """Set the log channel for stock changes and user purchases."""
-        self.log_channels[ctx.guild.id] = channel.id
-        embed = discord.Embed(title="Log Channel Set", description=f"Logs will be sent to {channel.mention}.", color=discord.Color.green())
-        await ctx.send(embed=embed)
-
-    async def log_stock_change(self, ctx, action: str, product: str, quantity: int):
-        """Log stock changes."""
-        if ctx.guild.id in self.log_channels:
-            log_channel = self.bot.get_channel(self.log_channels[ctx.guild.id])
-            embed = discord.Embed(title="Stock Change Log", color=discord.Color.orange())
-            embed.add_field(name="Action", value=action)
-            embed.add_field(name="Product", value=product)
-            embed.add_field(name="Quantity", value=quantity)
-            await log_channel.send(embed=embed)
-
-    async def log_purchase(self, ctx, user: discord.User, product: str, quantity: int, price: float, uuid: str):
-        """Log user purchases."""
-        if ctx.guild.id in self.log_channels:
-            log_channel = self.bot.get_channel(self.log_channels[ctx.guild.id])
-            embed = discord.Embed(title="Purchase Log", color=discord.Color.orange())
-            embed.add_field(name="User", value=str(user))
-            embed.add_field(name="Product", value=product)
-            embed.add_field(name="Quantity", value=quantity)
-            embed.add_field(name="Price", value=price)
-            embed.add_field(name="UUID", value=f"||{uuid}||")
-            await log_channel.send(embed=embed)
-
-    async def log_replacement(self, ctx, user: discord.User, old_product: str, quantity: int, replacement_message: str):
-        """Log product replacements."""
-        if ctx.guild.id in self.log_channels:
-            log_channel = self.bot.get_channel(self.log_channels[ctx.guild.id])
-            embed = discord.Embed(title="Replacement Log", color=discord.Color.orange())
-            embed.add_field(name="User", value=str(user))
-            embed.add_field(name="Old Product", value=old_product)
-            embed.add_field(name="Quantity", value=quantity)
-            embed.add_field(name="Replacement Message", value=replacement_message)
-            await log_channel.send(embed=embed)
-
-    def get_product_data_by_uuid(self, user: discord.User, uuid: str):
-        """Get product data by UUID from user purchase history."""
+    def get_product_data_by_uuid(self, user, uuid):
+        """Retrieve a specific product purchase by UUID for a user."""
         if user.id in self.user_data:
             for purchase in self.user_data[user.id]:
                 if purchase['uuid'] == uuid:
                     return purchase
         return None
 
-async def setup(bot):
-    await bot.add_cog(ProductCog(bot))
+    async def log_stock_change(self, ctx, action, product, quantity):
+        """Log stock changes."""
+        log_channel = self.bot.get_channel(self.log_channels.get("stock"))
+        if log_channel:
+            embed = discord.Embed(title="Stock Log", description=f"{action} stock:", color=discord.Color.blue())
+            embed.add_field(name="Product", value=product)
+            embed.add_field(name="Quantity", value=quantity)
+            embed.add_field(name="Admin", value=ctx.author.mention)
+            embed.timestamp = datetime.utcnow()
+            await log_channel.send(embed=embed)
+
+    async def log_purchase(self, ctx, user, product, quantity, price, uuid):
+        """Log user purchases."""
+        log_channel = self.bot.get_channel(self.log_channels.get("purchase"))
+        if log_channel:
+            embed = discord.Embed(title="Purchase Log", description="A user made a purchase:", color=discord.Color.green())
+            embed.add_field(name="User", value=user.mention)
+            embed.add_field(name="Product", value=product)
+            embed.add_field(name="Quantity", value=quantity)
+            embed.add_field(name="Price", value=price)
+            embed.add_field(name="UUID", value=f"||{uuid}||")
+            embed.timestamp = datetime.utcnow()
+            await log_channel.send(embed=embed)
+
+    async def log_replacement(self, ctx, user, old_product, quantity, replacement_message):
+        """Log product replacements."""
+        log_channel = self.bot.get_channel(self.log_channels.get("replacement"))
+        if log_channel:
+            embed = discord.Embed(title="Replacement Log", description="A product was replaced:", color=discord.Color.orange())
+            embed.add_field(name="User", value=user.mention)
+            embed.add_field(name="Old Product", value=old_product)
+            embed.add_field(name="Quantity", value=quantity)
+            embed.add_field(name="Replacement Message", value=replacement_message)
+            embed.timestamp = datetime.utcnow()
+            await log_channel.send(embed=embed)
+
+    async def log_scheduled_message(self, ctx, user, message, minutes):
+        """Log scheduled messages."""
+        log_channel = self.bot.get_channel(self.log_channels.get("schedule"))
+        if log_channel:
+            embed = discord.Embed(title="Scheduled Message Log", description="A message was scheduled:", color=discord.Color.blue())
+            embed.add_field(name="User", value=user.mention)
+            embed.add_field(name="Message", value=message)
+            embed.add_field(name="Scheduled in", value=f"{minutes} minute(s)")
+            embed.timestamp = datetime.utcnow()
+            await log_channel.send(embed=embed)
+
+    @commands.command(name='setlogchannel')
+    @commands.has_permissions(administrator=True)
+    async def set_log_channel(self, ctx, channel_type: str, channel: discord.TextChannel):
+        """Set the log channel for different log types."""
+        if channel_type.lower() in ["stock", "purchase", "replacement", "schedule"]:
+            self.log_channels[channel_type.lower()] = channel.id
+            self.save_data()
+            await ctx.send(f"Log channel for {channel_type} set to {channel.mention}.")
+        else:
+            await ctx.send("Invalid log channel type. Choose from: stock, purchase, replacement, schedule.")
+
+    @commands.command(name='setrole')
+    @commands.has_permissions(administrator=True)
+    async def set_role(self, ctx, role_type: str, role: discord.Role):
+        """Set roles for different purposes."""
+        if role_type.lower() in ["admin", "user", "mod"]:
+            self.roles[role_type.lower()] = role.id
+            self.save_data()
+            await ctx.send(f"Role for {role_type} set to {role.mention}.")
+        else:
+            await ctx.send("Invalid role type. Choose from: admin, user, mod.")
