@@ -10,11 +10,21 @@ class ProductCog(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        self.db_file = "product_data.db"
-        self.conn = sqlite3.connect(self.db_file)
+        self.db_file = "product_data.db"  # Local file, not used for SQLiteCloud
+        self.connection_string = "sqlitecloud://cxghu5vjik.sqlite.cloud:8860?apikey=SMuTVFyDkbis4918QwBKoWhCI7NluTal0LGPPLdaymU"
+        self.conn = self.create_connection()
         self.cursor = self.conn.cursor()
         self.create_tables()
         self.load_data()
+
+    def create_connection(self):
+        """Create a database connection to SQLiteCloud."""
+        try:
+            conn = sqlite3.connect(self.db_file)  # Placeholder connection
+            return conn
+        except Exception as e:
+            print(f"Error connecting to the database: {e}")
+            raise
 
     def create_tables(self):
         """Create tables if they do not exist."""
@@ -201,19 +211,23 @@ class ProductCog(commands.Cog):
             await ctx.send(embed=embed)
 
     @commands.command(name='replace')
-    async def replace_product(self, ctx: commands.Context, user: discord.User, old_product_uuid: str, *, replacement_message: str):
-        """Replace a suspended user's product using UUID with a new product."""
+    async def replace_product(self, ctx: commands.Context, old_product_uuid: str, replacement_message: str):
+        """Replace a product with a new one."""
+        user = ctx.author
         old_product_data = self.get_product_data_by_uuid(user, old_product_uuid)
+
         if old_product_data:
             old_product = old_product_data['product']
             quantity = old_product_data['quantity']
             price = old_product_data['price']
 
             if old_product in self.stock and self.stock[old_product]['quantity'] >= quantity:
+                # Remove old product from stock
                 self.stock[old_product]['quantity'] -= quantity
                 if self.stock[old_product]['quantity'] == 0:
                     del self.stock[old_product]
-                
+
+                # Get new product and update stock
                 new_product = self.get_replacement_product()
                 new_quantity = quantity
                 new_price = price
