@@ -135,7 +135,7 @@ class ProductCog(commands.Cog):
             await ctx.send(embed=embed)
 
             # Send DM to user
-            dm_embed = discord.Embed(title="Product Replacement", description=f"Your product has been replaced.", color=discord.Color.orange())
+            dm_embed = discord.Embed(title="Product Replacement", description=f"Your product has been replaced with {quantity} of {new_product}.", color=discord.Color.orange())
             dm_embed.add_field(name="Old Product", value=old_product)
             dm_embed.add_field(name="New Product", value=new_product)
             dm_embed.add_field(name="Quantity", value=quantity)
@@ -189,12 +189,14 @@ class ProductCog(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def set_log(self, ctx, log_type: str, channel: discord.TextChannel):
         """Set different channels for logging stock changes, purchases, and replacements."""
-        if log_type in ["stock", "purchase", "replacement"]:
+        valid_log_types = ["stock", "purchase", "replacement"]
+        if log_type in valid_log_types:
             self.log_channels[log_type] = channel.id
             embed = discord.Embed(title="Log Channel Set", description=f"Logging channel for {log_type} has been set to {channel.mention}.", color=discord.Color.green())
             await ctx.send(embed=embed)
         else:
-            await ctx.send("Invalid log type. Use 'stock', 'purchase', or 'replacement'.")
+            embed = discord.Embed(title="Invalid Log Type", description="Valid log types are: `stock`, `purchase`, `replacement`.", color=discord.Color.red())
+            await ctx.send(embed=embed)
 
     async def log_stock_change(self, ctx, action: str, product: str, quantity: int):
         """Log stock changes."""
