@@ -205,112 +205,65 @@ class ProductCog(commands.Cog):
             dm_embed.set_footer(text="NO VOUCH = NO WARRANTY")
             await user.send(embed=dm_embed)
 
-            await self.log_purchase(ctx, user, product, quantity, price, uuid)
+            await self.log_delivery(ctx, user, product, quantity, price, uuid)
         else:
             embed = discord.Embed(title="Error", description="Not enough stock or product not found.", color=discord.Color.red())
             await ctx.send(embed=embed)
 
-    @commands.command(name='replace')
-    async def replace_product(self, ctx: commands.Context, old_product_uuid: str, replacement_message: str):
-        """Replace a product with a new one."""
-        user = ctx.author
-        old_product_data = self.get_product_data_by_uuid(user, old_product_uuid)
-
-        if old_product_data:
-            old_product = old_product_data['product']
-            quantity = old_product_data['quantity']
-            price = old_product_data['price']
-
-            if old_product in self.stock and self.stock[old_product]['quantity'] >= quantity:
-                # Remove old product from stock
-                self.stock[old_product]['quantity'] -= quantity
-                if self.stock[old_product]['quantity'] == 0:
-                    del self.stock[old_product]
-
-                # Get new product and update stock
-                new_product = self.get_replacement_product()
-                new_quantity = quantity
-                new_price = price
-
-                if new_product in self.stock:
-                    self.stock[new_product]['quantity'] += new_quantity
-                else:
-                    self.stock[new_product] = {'quantity': new_quantity, 'emoji': ''}
-
-                # Update user data
-                now = datetime.utcnow()
-                self.user_data[user.id] = [item for item in self.user_data[user.id] if item['uuid'] != old_product_uuid]
-                self.user_data[user.id].append({
-                    'product': new_product,
-                    'quantity': new_quantity,
-                    'price': new_price,
-                    'time': now,
-                    'uuid': old_product_uuid
-                })
-
-                self.save_data()
-
-                # Send replacement embed
-                embed = discord.Embed(title="Product Replacement", description="Your product has been replaced.", color=discord.Color.orange())
-                embed.set_thumbnail(url=self.bot.user.avatar.url)
-                embed.add_field(name="Old Product", value=f"**{old_product}**")
-                embed.add_field(name="New Product", value=f"**{new_product}**")
-                embed.add_field(name="Quantity", value=f"**{new_quantity}**")
-                embed.add_field(name="Price", value=f"**{new_price}**")
-                embed.add_field(name="Message", value=replacement_message, inline=False)
-                embed.set_footer(text="NO VOUCH = NO WARRANTY")
-                await ctx.send(embed=embed)
-
-                # Notify user
-                dm_embed = discord.Embed(title="Replacement Confirmation", description=f"Your product has been replaced with {new_product}.", color=discord.Color.green())
-                dm_embed.set_thumbnail(url=self.bot.user.avatar.url)
-                dm_embed.add_field(name="Old Product", value=f"**{old_product}**")
-                dm_embed.add_field(name="New Product", value=f"**{new_product}**")
-                dm_embed.add_field(name="Quantity", value=f"**{new_quantity}**")
-                dm_embed.add_field(name="Price", value=f"**{new_price}**")
-                dm_embed.add_field(name="Message", value=replacement_message, inline=False)
-                dm_embed.set_footer(text="NO VOUCH = NO WARRANTY")
-                await user.send(embed=dm_embed)
-
-                await self.log_purchase(ctx, user, new_product, new_quantity, new_price, old_product_uuid)
-            else:
-                embed = discord.Embed(title="Error", description="Not enough stock of the old product or product not found.", color=discord.Color.red())
-                await ctx.send(embed=embed)
+    @commands.command(name='viewuserdata')
+    async def view_user_data(self, ctx: commands.Context, user: discord.User):
+        """View a user's purchase data."""
+        if user.id in self.user_data:
+            embed = discord.Embed(title=f"{user.name}'s Purchase Data", color=discord.Color.orange())
+            for purchase in self.user_data[user.id]:
+                embed.add_field(name=f"Product: {purchase['product']} (UUID: ||{purchase['uuid']}||)",
+                                value=f"Quantity: {purchase['quantity']} | Price: {purchase['price']} | Time: {purchase['time'].strftime('%Y-%m-%d %H:%M:%S')}",
+                                inline=False)
+            await ctx.send(embed=embed)
         else:
-            embed = discord.Embed(title="Error", description="Old product UUID not found.", color=discord.Color.red())
+            embed = discord.Embed(title="Error", description="No purchase data found for this user.", color=discord.Color.red())
             await ctx.send(embed=embed)
 
-    def get_product_data_by_uuid(self, user, uuid):
-        """Retrieve product data by UUID for a specific user."""
-        if user.id in self.user_data:
-            for item in self.user_data[user.id]:
-                if item['uuid'] == uuid:
-                    return item
-        return None
+    @commands.command(name='setlog')
+    @commands.has_permissions(administrator=True)
+    async def set_log_channel(self, ctx: commands.Context, channel: discord.TextChannel):
+        """Set a channel for logging stock changes and user purchases."""
+        self.log_channels[ctx.guild.id] = channel.id
+        self.save_data()
+        await ctx.send(f"Log channel set to {channel.mention}")
 
-    def get_replacement_product(self):
-        """Simulate fetching a replacement product."""
-        # Implement your logic for selecting a replacement product
-        # For simplicity, returning a static product name
-        return "Replacement Product"
+    @commands.command(name='manageconnection')
+    @commands.is_owner()
+    async def manage_connection(self, ctx: commands.Context, command: str):
+        """Manually manage the SQLiteCloud connection."""
+        if command == 'reconnect':
+            try:
+                self.conn = self.create_connection()
+                self.cursor = self.conn.cursor()
+                await ctx.send("Reconnected to SQLiteCloud successfully.")
+            except Exception as e:
+                await ctx.send(f"Error reconnecting: {e}")
+        else:
+            await ctx.send("Unknown command. Use 'reconnect' to reconnect to SQLiteCloud.")
 
-    async def log_stock_change(self, ctx, action, product, quantity):
+    async def log_stock_change(self, ctx: commands.Context, action: str, product: str, quantity: int):
         """Log stock changes to the specified channel."""
-        if ctx.guild.id in self.log_channels:
-            channel = self.bot.get_channel(self.log_channels[ctx.guild.id])
+        channel_id = self.log_channels.get(ctx.guild.id)
+        if channel_id:
+            channel = self.bot.get_channel(channel_id)
             if channel:
-                embed = discord.Embed(title="Stock Change", description=f"Product stock updated.", color=discord.Color.blue())
-                embed.add_field(name="Action", value=action)
+                embed = discord.Embed(title="Stock Change", description=f"{action} in stock", color=discord.Color.blue())
                 embed.add_field(name="Product", value=product)
                 embed.add_field(name="Quantity", value=quantity)
                 await channel.send(embed=embed)
 
-    async def log_purchase(self, ctx, user, product, quantity, price, uuid):
-        """Log user purchases to the specified channel."""
-        if ctx.guild.id in self.log_channels:
-            channel = self.bot.get_channel(self.log_channels[ctx.guild.id])
+    async def log_delivery(self, ctx: commands.Context, user: discord.User, product: str, quantity: int, price: float, uuid: str):
+        """Log delivery information to the specified channel."""
+        channel_id = self.log_channels.get(ctx.guild.id)
+        if channel_id:
+            channel = self.bot.get_channel(channel_id)
             if channel:
-                embed = discord.Embed(title="Purchase Log", description=f"User purchase recorded.", color=discord.Color.green())
+                embed = discord.Embed(title="Delivery Log", description="Product delivery recorded", color=discord.Color.purple())
                 embed.add_field(name="User", value=user.mention)
                 embed.add_field(name="Product", value=product)
                 embed.add_field(name="Quantity", value=quantity)
@@ -318,26 +271,5 @@ class ProductCog(commands.Cog):
                 embed.add_field(name="UUID", value=f"||{uuid}||")
                 await channel.send(embed=embed)
 
-    @commands.command(name='setlog')
-    @commands.has_permissions(administrator=True)
-    async def set_log_channel(self, ctx: commands.Context, channel: discord.TextChannel):
-        """Set the channel for logging stock changes and user purchases."""
-        self.log_channels[ctx.guild.id] = channel.id
-        self.save_data()
-        await ctx.send(f"Log channel set to {channel.mention}")
-
-    @commands.command(name='viewuserdata')
-    async def view_user_data(self, ctx: commands.Context, user: discord.User):
-        """View user purchase data."""
-        if user.id in self.user_data:
-            embed = discord.Embed(title=f"{user.name}'s Purchase Data", color=discord.Color.blue())
-            for purchase in self.user_data[user.id]:
-                embed.add_field(name=f"Product: {purchase['product']} - UUID: ||{purchase['uuid']}||", value=f"Quantity: {purchase['quantity']}, Price: {purchase['price']}, Time: {purchase['time']}", inline=False)
-            await ctx.send(embed=embed)
-        else:
-            embed = discord.Embed(title="No Data", description="No purchase data found for this user.", color=discord.Color.red())
-            await ctx.send(embed=embed)
-
-    def cog_unload(self):
-        """Close the database connection when the cog is unloaded."""
-        self.conn.close()
+def setup(bot):
+    bot.add_cog(ProductCog(bot))
