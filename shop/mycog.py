@@ -1,17 +1,23 @@
 from redbot.core import commands
 import discord
+from datetime import datetime
+import asyncio
 
 class ProductCog(commands.Cog):
-    """Product management and delivery cog"""
+    """Product management and delivery cog with user data tracking"""
 
     def __init__(self, bot):
         self.bot = bot
         self.stock = {}
+        self.user_data = {}  # Dictionary to store user purchase data
 
     @commands.group(invoke_without_command=True)
     async def product(self, ctx):
         """Product management commands."""
-        await ctx.send("Use `!product add <name> <quantity>` to add a product, or `!product remove <name> <quantity>` to remove a product.")
+        embed = discord.Embed(title="Product Commands", description="Manage products with the following commands:", color=discord.Color.blue())
+        embed.add_field(name="Add Product", value="`!product add <name> <quantity>`", inline=False)
+        embed.add_field(name="Remove Product", value="`!product remove <name> <quantity>`", inline=False)
+        await ctx.send(embed=embed)
 
     @product.command(name='add')
     @commands.has_permissions(administrator=True)
@@ -41,13 +47,15 @@ class ProductCog(commands.Cog):
             embed.add_field(name="Quantity", value=quantity)
             await ctx.send(embed=embed)
         else:
-            await ctx.send("Not enough stock or product not found.")
+            embed = discord.Embed(title="Error", description="Not enough stock or product not found.", color=discord.Color.red())
+            await ctx.send(embed=embed)
 
     @commands.command(name='stock')
     async def stock_info(self, ctx):
         """Show current stock info."""
         if not self.stock:
-            await ctx.send("No products in stock.")
+            embed = discord.Embed(title="Stock Info", description="No products in stock.", color=discord.Color.yellow())
+            await ctx.send(embed=embed)
             return
 
         embed = discord.Embed(title="Current Stock", color=discord.Color.blue())
@@ -56,20 +64,40 @@ class ProductCog(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.command(name='delivery')
-    async def delivery(self, ctx, quantity: int, price: float, product: str):
-        """Send a delivery embed."""
+    async def delivery(self, ctx, user: discord.User, quantity: int, price: float, product: str):
+        """Send a delivery embed and track user purchase."""
         if product in self.stock and self.stock[product] >= quantity:
             self.stock[product] -= quantity
             if self.stock[product] == 0:
                 del self.stock[product]
 
+            # Record user purchase data
+            now = datetime.utcnow()
+            if user.id not in self.user_data:
+                self.user_data[user.id] = []
+            self.user_data[user.id].append({
+                'product': product,
+                'quantity': quantity,
+                'price': price,
+                'time': now
+            })
+
+            # Send delivery embed
             embed = discord.Embed(title="Product Delivery", description="Product has been delivered.", color=discord.Color.purple())
             embed.add_field(name="Product", value=product)
             embed.add_field(name="Quantity", value=quantity)
             embed.add_field(name="Price", value=price)
             await ctx.send(embed=embed)
+
+            # Send DM to user
+            dm_embed = discord.Embed(title="Delivery Confirmation", description=f"You have received {quantity} of {product}.", color=discord.Color.green())
+            dm_embed.add_field(name="Product", value=product)
+            dm_embed.add_field(name="Quantity", value=quantity)
+            dm_embed.add_field(name="Price", value=price)
+            await user.send(embed=dm_embed)
         else:
-            await ctx.send("Not enough stock or product not found.")
+            embed = discord.Embed(title="Error", description="Not enough stock or product not found.", color=discord.Color.red())
+            await ctx.send(embed=embed)
 
     @commands.command(name='replace')
     async def replace_product(self, ctx, old_product: str, new_product: str, quantity: int):
@@ -90,7 +118,39 @@ class ProductCog(commands.Cog):
             embed.add_field(name="Quantity", value=quantity)
             await ctx.send(embed=embed)
         else:
-            await ctx.send("Not enough stock or old product not found.")
+            embed = discord.Embed(title="Error", description="Not enough stock or old product not found.", color=discord.Color.red())
+            await ctx.send(embed=embed)
+
+    @commands.command(name='schedule')
+    @commands.has_permissions(administrator=True)
+    async def schedule_message(self, ctx, user: discord.User, time: str, *, message: str):
+        """Schedule a DM to a user."""
+        try:
+            scheduled_time = datetime.strptime(time, "%Y-%m-%d %H:%M:%S")
+            now = datetime.utcnow()
+            delay = (scheduled_time - now).total_seconds()
+
+            if delay > 0:
+                await ctx.send(f"Message scheduled to be sent to {user} at {scheduled_time}.")
+                await asyncio.sleep(delay)
+                dm_embed = discord.Embed(title="Scheduled Message", description=message, color=discord.Color.gold())
+                await user.send(embed=dm_embed)
+            else:
+                await ctx.send("The scheduled time must be in the future.")
+        except ValueError:
+            await ctx.send("Invalid time format. Use `YYYY-MM-DD HH:MM:SS`.")
+
+    @commands.command(name='viewuserdata')
+    async def view_user_data(self, ctx, user: discord.User):
+        """View user purchase data."""
+        if user.id in self.user_data:
+            embed = discord.Embed(title=f"{user}'s Purchase History", color=discord.Color.blue())
+            for data in self.user_data[user.id]:
+                embed.add_field(name=data['time'].strftime("%Y-%m-%d %H:%M:%S"), value=f"Product: {data['product']}\nQuantity: {data['quantity']}\nPrice: {data['price']}", inline=False)
+            await ctx.send(embed=embed)
+        else:
+            embed = discord.Embed(title="No Data", description=f"No purchase data found for {user}.", color=discord.Color.red())
+            await ctx.send(embed=embed)
 
 async def setup(bot):
     await bot.add_cog(ProductCog(bot))
