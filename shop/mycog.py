@@ -64,8 +64,8 @@ class ProductCog(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.command(name='delivery')
-    async def delivery(self, ctx, user: discord.User, quantity: int, price: float, product: str):
-        """Send a delivery embed and track user purchase."""
+    async def delivery(self, ctx, user: discord.User, quantity: int, price: float, product: str, *, custom_message: str = None):
+        """Send a delivery embed and track user purchase with an optional custom message."""
         if product in self.stock and self.stock[product] >= quantity:
             self.stock[product] -= quantity
             if self.stock[product] == 0:
@@ -87,6 +87,8 @@ class ProductCog(commands.Cog):
             embed.add_field(name="Product", value=product)
             embed.add_field(name="Quantity", value=quantity)
             embed.add_field(name="Price", value=price)
+            if custom_message:
+                embed.add_field(name="Message", value=custom_message, inline=False)
             await ctx.send(embed=embed)
 
             # Send DM to user
@@ -94,6 +96,8 @@ class ProductCog(commands.Cog):
             dm_embed.add_field(name="Product", value=product)
             dm_embed.add_field(name="Quantity", value=quantity)
             dm_embed.add_field(name="Price", value=price)
+            if custom_message:
+                dm_embed.add_field(name="Message", value=custom_message, inline=False)
             await user.send(embed=dm_embed)
         else:
             embed = discord.Embed(title="Error", description="Not enough stock or product not found.", color=discord.Color.red())
