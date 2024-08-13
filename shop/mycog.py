@@ -1,161 +1,118 @@
-import discord
-from redbot.core import commands
+import asyncio
 import sqlite3
-import random
-from datetime import datetime
+import uuid
+from typing import Optional, Literal
+from discord import Embed, File, Member
+from redbot.core import Config, checks, commands
+from redbot.core.data_manager import cog_data_path
+from redbot.core.utils.menus import menu, DEFAULT_CONTROLS
 
-class ProductCog(commands.Cog):
-    """Product management and delivery cog with SQLite integration and user data tracking"""
+class Manager(commands.Cog):
+    """
+    Manage product delivery and stock.
+    """
 
     def __init__(self, bot):
         self.bot = bot
-        self.conn = sqlite3.connect('database.db')
-        self.cursor = self.conn.cursor()
-        self.setup_db()
-        self.roles = {}  # Dictionary to store role permissions
-        self.log_channels = {}  # Dictionary to store logging channels
+        self.config = Config.get_conf(self, 123456789012345678)  # Unique identifier
+        self.config.register_global(log_channel=None, set_role=None)
+        self.config.register_guild(stock=[], ignore_roles=[], log_channel=None)
+        self.db = sqlite3.connect("sqlitecloud://cxghu5vjik.sqlite.cloud:8860?apikey=SMuTVFyDkbis4918QwBKoWhCI7NluTal0LGPPLdaymU")
+        self.cursor = self.db.cursor()
+        self.cursor.execute('''CREATE TABLE IF NOT EXISTS stock
+                               (product TEXT, quantity INTEGER, price REAL, emoji TEXT)''')
+        self.db.commit()
 
-    def setup_db(self):
-        """Set up the SQLite database with the necessary tables."""
-        self.cursor.execute('''
-            CREATE TABLE IF NOT EXISTS stock (
-                product TEXT PRIMARY KEY,
-                quantity INTEGER,
-                price REAL,
-                emoji TEXT
-            )
-        ''')
-        self.cursor.execute('''
-            CREATE TABLE IF NOT EXISTS user_data (
-                user_id INTEGER,
-                product TEXT,
-                quantity INTEGER,
-                price REAL,
-                time TEXT,
-                uuid TEXT,
-                PRIMARY KEY (user_id, uuid)
-            )
-        ''')
-        self.conn.commit()
+    @commands.command()
+    async def deliver(self, ctx: commands.Context, quantity: int, price: float, product: str, *, text: str) -> None:
+        """Deliver a product to a member via DM."""
+        user = ctx.author
+        delivery_id = str(uuid.uuid4())[:4]
+        embed = Embed(title="Product Delivery", description=f"**Product**: {product}\n**Quantity**: {quantity}\n**Price**: ${price}\n**Details**: {text}",
+                      color=0x00ff00)
+        embed.set_footer(text=f"Vouch for product. No vouch, no warranty. ID: {delivery_id}")
+        embed.set_author(name=self.bot.user.name, icon_url=self.bot.user.avatar.url)
+        try:
+            await user.send(embed=embed)
+            await ctx.send(f"Product delivery has been sent to {user.mention}.")
+        except Exception as e:
+            await ctx.send(f"Failed to send DM to {user.mention}.")
+            print(f"Error sending DM: {e}")
 
-    @commands.group(invoke_without_command=True)
-    async def product(self, ctx):
-        """Product management commands."""
-        embed = discord.Embed(title="Product Commands", description="Manage products with the following commands:", color=discord.Color.blue())
-        embed.add_field(name="Add Product", value="`!product add <name> <quantity> [emoji]`", inline=False)
-        embed.add_field(name="Remove Product", value="`!product remove <name> <quantity>`", inline=False)
-        await ctx.send(embed=embed)
-
-    @product.command(name='add')
-    @commands.has_permissions(administrator=True)
-    async def add_product(self, ctx, name: str, quantity: int, emoji: str = None):
-        """Add a product to stock with an optional emoji."""
-        if self.product_exists(name):
-            self.cursor.execute('UPDATE stock SET quantity = quantity + ? WHERE product = ?', (quantity, name))
-        else:
-            self.cursor.execute('INSERT INTO stock (product, quantity, price, emoji) VALUES (?, ?, ?, ?)', (name, quantity, 0, emoji))
-
-        self.conn.commit()
-        embed = discord.Embed(title="Product Added", description=f"{name} has been added to stock.", color=discord.Color.green())
-        embed.add_field(name="Product", value=f"{name} {emoji if emoji else ''}")
-        embed.add_field(name="Quantity", value=quantity)
-        await ctx.send(embed=embed)
-        await self.log_stock_change(ctx, "Added", name, quantity)
-
-    @product.command(name='remove')
-    @commands.has_permissions(administrator=True)
-    async def remove_product(self, ctx, name: str, quantity: int):
-        """Remove a product from stock."""
-        if self.product_exists(name):
-            self.cursor.execute('SELECT quantity FROM stock WHERE product = ?', (name,))
-            current_quantity = self.cursor.fetchone()[0]
-            if current_quantity >= quantity:
-                new_quantity = current_quantity - quantity
-                if new_quantity > 0:
-                    self.cursor.execute('UPDATE stock SET quantity = ? WHERE product = ?', (new_quantity, name))
-                else:
-                    self.cursor.execute('DELETE FROM stock WHERE product = ?', (name,))
-                self.conn.commit()
-                embed = discord.Embed(title="Product Removed", description=f"{name} has been removed from stock.", color=discord.Color.red())
-                embed.add_field(name="Product", value=name)
-                embed.add_field(name="Quantity", value=quantity)
-                await ctx.send(embed=embed)
-                await self.log_stock_change(ctx, "Removed", name, quantity)
-            else:
-                embed = discord.Embed(title="Error", description="Not enough stock or product not found.", color=discord.Color.red())
-                await ctx.send(embed=embed)
-        else:
-            embed = discord.Embed(title="Error", description="Product not found.", color=discord.Color.red())
-            await ctx.send(embed=embed)
-
-    @commands.command(name='stock')
-    async def stock_info(self, ctx):
-        """Show current stock info."""
-        self.cursor.execute('SELECT * FROM stock')
-        products = self.cursor.fetchall()
-        
-        if not products:
-            embed = discord.Embed(title="Stock Info", description="No products in stock.", color=discord.Color.yellow())
-            await ctx.send(embed=embed)
+    @commands.command()
+    async def stockinfo(self, ctx: commands.Context) -> None:
+        """Show advanced stock info."""
+        stock_list = self.cursor.execute("SELECT rowid, product, quantity, price, emoji FROM stock").fetchall()
+        if not stock_list:
+            await ctx.send("No stock available.")
             return
-
-        embed = discord.Embed(title="Current Stock", color=discord.Color.blue())
-        for product, quantity, price, emoji in products:
-            embed.add_field(name=f"{product} {emoji if emoji else ''}", value=f"Quantity: {quantity} | Price: {price}", inline=False)
+        embed = Embed(title="Stock Information", color=0x00ff00)
+        for idx, (rowid, product, quantity, price, emoji) in enumerate(stock_list, 1):
+            embed.add_field(name=f"#{idx}: {product} {emoji}", value=f"**Quantity**: {quantity}\n**Price**: ${price}", inline=False)
         await ctx.send(embed=embed)
 
-    @commands.command(name='delivery')
-    async def delivery(self, ctx, user: discord.User, quantity: int, price: float, product: str, *, custom_message: str = None):
-        """Send a delivery embed and track user purchase with an optional custom message."""
-        uuid = ''.join(random.choices('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=4))  # Generate a 4-digit alphanumeric UUID
+    @commands.command()
+    @checks.has_permissions(manage_guild=True)
+    async def addproduct(self, ctx: commands.Context, product: str, quantity: int, price: float, emoji: str) -> None:
+        """Add a product to the stock."""
+        self.cursor.execute("INSERT INTO stock (product, quantity, price, emoji) VALUES (?, ?, ?, ?)",
+                            (product, quantity, price, emoji))
+        self.db.commit()
+        await ctx.send(f"Product `{product}` added to stock.")
 
-        if self.product_exists(product):
-            self.cursor.execute('SELECT quantity FROM stock WHERE product = ?', (product,))
-            current_quantity = self.cursor.fetchone()[0]
-            if current_quantity >= quantity:
-                self.cursor.execute('UPDATE stock SET quantity = quantity - ? WHERE product = ?', (quantity, product))
-                self.conn.commit()
+    @commands.command()
+    @checks.has_permissions(manage_guild=True)
+    async def removeproduct(self, ctx: commands.Context, product: str) -> None:
+        """Remove a product from the stock."""
+        self.cursor.execute("DELETE FROM stock WHERE product = ?", (product,))
+        self.db.commit()
+        await ctx.send(f"Product `{product}` removed from stock.")
 
-                # Record user purchase data
-                now = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
-                self.cursor.execute('INSERT INTO user_data (user_id, product, quantity, price, time, uuid) VALUES (?, ?, ?, ?, ?, ?)', 
-                                    (user.id, product, quantity, price, now, uuid))
-                self.conn.commit()
-
-                # Send delivery embed
-                embed = discord.Embed(title="Product Delivery", description="Product has been delivered.", color=discord.Color.purple())
-                embed.set_thumbnail(url=self.bot.user.avatar_url)
-                embed.add_field(name="Product", value=f"**{product}**")
-                embed.add_field(name="Quantity", value=f"**{quantity}**")
-                embed.add_field(name="Price", value=f"**{price}**")
-                embed.add_field(name="UUID", value=f"||{uuid}||")
-                if custom_message:
-                    embed.add_field(name="Custom Message", value=custom_message)
-                await user.send(embed=embed)
-                await ctx.send(f"Delivery sent to {user.mention}.")
-            else:
-                embed = discord.Embed(title="Error", description="Not enough stock or product not found.", color=discord.Color.red())
-                await ctx.send(embed=embed)
+    @commands.command()
+    @checks.has_permissions(manage_guild=True)
+    async def setrole(self, ctx: commands.Context, role: Optional[commands.RoleConverter]) -> None:
+        """Set a role that can use the delivery commands."""
+        if role:
+            await self.config.guild(ctx.guild).set_role.set(role.id)
+            await ctx.send(f"Only members with the role {role.mention} can use the delivery commands.")
         else:
-            embed = discord.Embed(title="Error", description="Product not found.", color=discord.Color.red())
-            await ctx.send(embed=embed)
+            await self.config.guild(ctx.guild).set_role.clear()
+            await ctx.send("Delivery commands can be used by everyone.")
 
-    def product_exists(self, name: str) -> bool:
-        """Check if a product exists in the stock."""
-        self.cursor.execute('SELECT COUNT(*) FROM stock WHERE product = ?', (name,))
-        return self.cursor.fetchone()[0] > 0
+    @commands.command()
+    @checks.has_permissions(manage_guild=True)
+    async def setlogchannel(self, ctx: commands.Context, channel: Optional[commands.TextChannelConverter]) -> None:
+        """Set a channel for logging events."""
+        if channel:
+            await self.config.log_channel.set(channel.id)
+            await ctx.send(f"Log channel set to {channel.mention}.")
+        else:
+            await self.config.log_channel.clear()
+            await ctx.send("Log channel cleared.")
 
-    async def log_stock_change(self, ctx, action: str, product: str, quantity: int):
-        """Log stock changes to a specific channel."""
-        if self.log_channels:
-            log_channel = self.bot.get_channel(self.log_channels.get('stock'))
+    @commands.Cog.listener()
+    async def on_command_completion(self, ctx: commands.Context):
+        log_channel_id = await self.config.log_channel()
+        if log_channel_id:
+            log_channel = self.bot.get_channel(log_channel_id)
             if log_channel:
-                embed = discord.Embed(title="Stock Change", description=f"{action} action performed.", color=discord.Color.orange())
-                embed.add_field(name="Product", value=product)
-                embed.add_field(name="Quantity", value=quantity)
-                embed.add_field(name="User", value=ctx.author)
-                embed.set_footer(text=datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'))
+                embed = Embed(title="Command Executed", description=f"**Command**: {ctx.command}\n**User**: {ctx.author}\n**Channel**: {ctx.channel}\n**Message**: {ctx.message.content}",
+                              color=0x00ff00)
                 await log_channel.send(embed=embed)
 
-async def setup(bot):
-    await bot.add_cog(ProductCog(bot))
+    @commands.Cog.listener()
+    async def on_message(self, message: commands.Message):
+        """Check for role restrictions for delivery commands."""
+        if message.author.bot:
+            return
+        set_role_id = await self.config.guild(message.guild).set_role()
+        if set_role_id:
+            set_role = message.guild.get_role(set_role_id)
+            if set_role not in message.author.roles:
+                return
+        if message.content.startswith("!deliver") or message.content.startswith("!stockinfo"):
+            if message.channel.permissions_for(message.guild.me).send_messages:
+                await message.channel.send("Command restricted to specific roles.")
+
+    async def cog_unload(self):
+        self.db.close()
