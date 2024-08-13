@@ -59,8 +59,8 @@ class ProductCog(commands.Cog):
     async def product(self, ctx):
         """Product management commands."""
         embed = discord.Embed(title="Product Commands", description="Manage products with the following commands:", color=discord.Color.blue())
-        embed.add_field(name="Add Product", value="`!product add <name> <quantity> <price>`", inline=False)
-        embed.add_field(name="Remove Product", value="`!product remove <name> <quantity>`", inline=False)
+        embed.add_field(name="Add Product", value="`!product add <name> <quantity> <price> [emoji]`", inline=False)
+        embed.add_field(name="Remove Product", value="`!product remove <name> <quantity> [emoji]`", inline=False)
         embed.add_field(name="Replace Product", value="`!product replace <old_name> <new_name> <quantity>`", inline=False)
         await ctx.send(embed=embed)
 
@@ -180,10 +180,9 @@ class ProductCog(commands.Cog):
             if new_product in self.stock:
                 self.stock[new_product]['quantity'] += quantity
             else:
-                self.stock[new_product] = {'quantity': quantity, 'price': self.stock.get(old_product, {'price': 0})['price']}
+                self.stock[new_product] = {'quantity': quantity, 'price': self.stock[old_product]['price']}
 
-            self.cursor.execute("INSERT OR REPLACE INTO stock (product, quantity, price) VALUES (?, ?, ?)", 
-                                (new_product, self.stock[new_product]['quantity'], self.stock[new_product]['price']))
+            self.cursor.execute("INSERT OR REPLACE INTO stock (product, quantity, price) VALUES (?, ?, ?)", (new_product, self.stock[new_product]['quantity'], self.stock[new_product]['price']))
             self.conn.commit()
 
             embed = discord.Embed(title="Product Replaced", description="Product has been replaced.", color=discord.Color.orange())
@@ -191,7 +190,7 @@ class ProductCog(commands.Cog):
             embed.add_field(name="New Product", value=new_product)
             embed.add_field(name="Quantity", value=quantity)
             await ctx.send(embed=embed)
-            await self.log(f"Product replaced: Old Product: {old_product}, New Product: {new_product}, Quantity: {quantity}")
+            await self.log(f"Product replaced: {old_product} with {new_product}, Quantity: {quantity}")
         else:
             embed = discord.Embed(title="Error", description="Not enough stock or old product not found.", color=discord.Color.red())
             await ctx.send(embed=embed)
@@ -210,6 +209,7 @@ class ProductCog(commands.Cog):
                 await asyncio.sleep(delay)
                 dm_embed = discord.Embed(title="Scheduled Message", description=message, color=discord.Color.gold())
                 await user.send(embed=dm_embed)
+                await self.log(f"Scheduled message sent to {user} at {scheduled_time}.")
             else:
                 await ctx.send("The scheduled time must be in the future.")
         except ValueError:
