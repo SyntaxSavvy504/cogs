@@ -36,21 +36,21 @@ class Manager(commands.Cog):
         ist = timezone('Asia/Kolkata')
         return datetime.now(ist).strftime("%Y-%m-%d %H:%M:%S")
 
-    async def is_allowed(ctx):
+    async def is_allowed(self, ctx):
         """Check if the user has a role that allows command usage."""
-        roles = await ctx.cog.config.restricted_roles()
+        roles = await self.config.restricted_roles()
         if not roles:
             return True
         return any(role.id in roles for role in ctx.author.roles)
 
-    async def has_grant_permissions(ctx):
+    async def has_grant_permissions(self, ctx):
         """Check if the user has a role with granted permissions."""
-        return any(role.id in await ctx.cog.config.grant_permissions() for role in ctx.author.roles)
+        return any(role.id in await self.config.grant_permissions() for role in ctx.author.roles)
 
     def generate_uuid(self):
-        return str(uuid.uuid4())[:4].upper()
+        return str(uuid.uuid4()).upper()[:4]
 
-    async def check_channel(ctx):
+    async def check_channel(self, ctx):
         """Ensure command is used in the allowed channel."""
         allowed_channel_id = 1273275915174023230
         if ctx.channel.id != allowed_channel_id:
