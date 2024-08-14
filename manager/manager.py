@@ -56,9 +56,9 @@ class Manager(commands.Cog):
             color=discord.Color.blue()
         )
         embed.set_author(name="Frenzy Store", icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None)
-        embed.add_field(name="Here is your product >", value=f"> {product}", inline=False)
-        embed.add_field(name="Amount >", value=f"> ${price * quantity:.2f}", inline=False)
-        embed.add_field(name="Purchase Date >", value=f"> {purchase_date}", inline=False)
+        embed.add_field(name="Here is your product", value=f"> {product}", inline=False)
+        embed.add_field(name="Amount", value=f"> ${price * quantity:.2f}", inline=False)
+        embed.add_field(name="Purchase Date", value=f"> {purchase_date}", inline=False)
         embed.add_field(name="\u200b", value="**- follow our [TOS](https://discord.com/channels/911622571856891934/911629489325355049) & be a smart buyer!\n- [CLICK HERE](https://discord.com/channels/911622571856891934/1134197532868739195)  to leave your __feedback__**", inline=False)
         embed.add_field(name="Custom Message", value=f"||```{custom_text}```||", inline=False)
         embed.set_footer(text=f"Vouch format: +rep {member.mention} {quantity}x {product} | No vouch, no warranty")
@@ -104,7 +104,7 @@ class Manager(commands.Cog):
         for idx, (product, info) in enumerate(stock.items(), start=1):
             embed.add_field(
                 name=f"{idx}. {product}",
-                value=f"Quantity: {info['quantity']}\nPrice: ${info['price']:.2f}",
+                value=f"> **Quantity:** {info['quantity']}\n> **Price:** ${info['price']:.2f}",
                 inline=False
             )
 
@@ -122,7 +122,26 @@ class Manager(commands.Cog):
         else:
             stock[product] = {"quantity": quantity, "price": price, "emoji": emoji}
         await self.config.stock.set(stock)
-        await ctx.send(f"Added {quantity}x {product} {emoji} at ${price:.2f} each to the stock.")
+        embed = discord.Embed(
+            title="Product Added",
+            color=discord.Color.teal()
+        )
+        embed.add_field(
+            name="Product",
+            value=f"> {product} {emoji}",
+            inline=False
+        )
+        embed.add_field(
+            name="Quantity",
+            value=f"> {quantity}",
+            inline=False
+        )
+        embed.add_field(
+            name="Price",
+            value=f"> ${price:.2f}",
+            inline=False
+        )
+        await ctx.send(embed=embed)
 
         # Log the addition
         await self.log_event(ctx, f"Added {quantity}x {product} to the stock at ${price:.2f}")
@@ -138,7 +157,17 @@ class Manager(commands.Cog):
 
         del stock[product]
         await self.config.stock.set(stock)
-        await ctx.send(f"Removed {product} from the stock.")
+
+        embed = discord.Embed(
+            title="Product Removed",
+            color=discord.Color.red()
+        )
+        embed.add_field(
+            name="Product",
+            value=f"> {product}",
+            inline=False
+        )
+        await ctx.send(embed=embed)
 
         # Log the removal
         await self.log_event(ctx, f"Removed {product} from the stock.")
@@ -147,7 +176,12 @@ class Manager(commands.Cog):
     async def setlogchannel(self, ctx, channel: discord.TextChannel):
         """Set the log channel."""
         await self.config.log_channel_id.set(channel.id)
-        await ctx.send(f"Log channel set to {channel.mention}.")
+        embed = discord.Embed(
+            title="Log Channel Set",
+            description=f"The log channel has been set to {channel.mention}.",
+            color=discord.Color.orange()
+        )
+        await ctx.send(embed=embed)
 
     @commands.command()
     async def setrole(self, ctx, role: discord.Role):
@@ -155,7 +189,12 @@ class Manager(commands.Cog):
         restricted_roles = await self.config.restricted_roles()
         restricted_roles.append(role.id)
         await self.config.restricted_roles.set(restricted_roles)
-        await ctx.send(f"Role {role.name} added to the restricted roles list.")
+        embed = discord.Embed(
+            title="Role Added",
+            description=f"Role {role.name} has been added to the restricted roles list.",
+            color=discord.Color.dark_blue()
+        )
+        await ctx.send(embed=embed)
 
     @commands.command()
     @commands.check(is_allowed)
@@ -188,9 +227,10 @@ class Manager(commands.Cog):
             if log_channel:
                 embed = discord.Embed(
                     title="Log Event",
-                    description=message,
+                    description=f"> {message}",
                     color=discord.Color.orange(),
                     timestamp=datetime.utcnow()
                 )
                 embed.set_footer(text=f"Logged by {ctx.author.name}")
                 await log_channel.send(embed=embed)
+
