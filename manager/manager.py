@@ -26,9 +26,11 @@ class Manager(commands.Cog):
         }
         self.config.register_guild(**default_server)
 
-        # Create settings.json if it doesn't exist
-        if not os.path.exists("settings.json"):
-            with open("settings.json", "w") as f:
+        # Create settings.json in the specified directory if it doesn't exist
+        settings_path = "/home/container/.local/share/Red-DiscordBot/data/pterodactyl/cogs/Manager/settings.json"
+        if not os.path.exists(settings_path):
+            os.makedirs(os.path.dirname(settings_path), exist_ok=True)
+            with open(settings_path, "w") as f:
                 json.dump(default_global, f)
 
     def get_ist_time(self):
@@ -38,16 +40,12 @@ class Manager(commands.Cog):
 
     async def is_allowed(ctx):
         roles = await ctx.cog.config.restricted_roles()
-        grant_permissions = [role async for role in ctx.cog.config.grant_permissions()]  # Collect async generator into a list
-        if ctx.author.id == ctx.guild.owner_id or any(role.id in grant_permissions for role in ctx.author.roles):
-            return True
         if not roles:
             return True
         return any(role.id in roles for role in ctx.author.roles)
 
     async def has_grant_permissions(ctx):
-        grant_permissions = [role async for role in ctx.cog.config.grant_permissions()]  # Collect async generator into a list
-        return any(role.id in grant_permissions for role in ctx.author.roles)
+        return any(role.id in await ctx.cog.config.grant_permissions() for role in ctx.author.roles)
 
     def generate_uuid(self):
         return str(uuid.uuid4())[:4].upper()
@@ -75,14 +73,12 @@ class Manager(commands.Cog):
             uuid_code = self.generate_uuid()
             purchase_date = self.get_ist_time()
 
-            emoji = guild_stock.get(product, {}).get('emoji', '')
-
             embed = discord.Embed(
                 title="__Frenzy Store__",
                 color=discord.Color.purple()
             )
             embed.set_author(name="Frenzy Store", icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None)
-            embed.add_field(name="Here is your product", value=f"> {emoji} {product}", inline=False)
+            embed.add_field(name="Here is your product", value=f"> {product}", inline=False)
             embed.add_field(name="Amount", value=f"> ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)", inline=False)
             embed.add_field(name="Purchase Date", value=f"> {purchase_date}", inline=False)
             embed.add_field(name="\u200b", value="**- follow our [TOS](https://discord.com/channels/911622571856891934/911629489325355049) & be a smart buyer!\n- [CLICK HERE](https://discord.com/channels/911622571856891934/1134197532868739195)  to leave your __feedback__**", inline=False)
@@ -97,7 +93,7 @@ class Manager(commands.Cog):
                 await ctx.send(f"Failed to deliver the product to {member.mention}. They may have DMs disabled.")
             
             # Log the delivery
-            await self.log_event(ctx, f"Delivered {quantity}x {product} {emoji} to {member.mention} at ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)")
+            await self.log_event(ctx, f"Delivered {quantity}x {product} to {member.mention} at ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)")
 
             # Record the purchase in history
             purchase_history = await self.config.guild(ctx.guild).purchase_history()
@@ -131,12 +127,11 @@ class Manager(commands.Cog):
         )
 
         for idx, (product, info) in enumerate(guild_stock.items(), start=1):
-            emoji = info.get('emoji', '')
             amount_inr = info['price']
             usd_exchange_rate = 83.2  # Exchange rate from INR to USD
             amount_usd = amount_inr / usd_exchange_rate
             embed.add_field(
-                name=f"{idx}. {emoji} {product}",
+                name=f"{idx}. {product}",
                 value=f"> **Quantity:** {info['quantity']}\n> **Price:** ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)",
                 inline=False
             )
@@ -159,33 +154,54 @@ class Manager(commands.Cog):
             title="Product Added",
             color=discord.Color.teal()
         )
-        embed.add_field(name="Product", value=product, inline=False)
-        embed.add_field(name="Quantity", value=quantity, inline=False)
-        embed.add_field(name="Price", value=f"₹{price:.2f}", inline=False)
-        embed.add_field(name="Emoji", value=emoji, inline=False)
+        embed.add_field(
+            name="Product",
+            value=f"> {product} {emoji}",
+            inline=False
+        )
+        embed.add_field(
+            name="Quantity",
+            value=f"> {quantity}",
+            inline=False
+        )
+        embed.add_field(
+            name="Price",
+            value=f"> ₹{price:.2f} (INR) / ${price / 83.2:.2f} (USD)",
+            inline=False
+        )
         await ctx.send(embed=embed)
 
-    @commands.command()
-    @commands.check(is_allowed)
-    async def removeproduct(self, ctx, product: str, quantity: int):
-        """Remove a product from the stock."""
-        guild_stock = await self.config.guild(ctx.guild).stock()
-        if product in guild_stock:
-            if guild_stock[product]['quantity'] >= quantity:
-                guild_stock[product]['quantity'] -= quantity
-                if guild_stock[product]['quantity'] <= 0:
-                    del guild_stock[product]
-                await self.config.guild(ctx.guild).stock.set(guild_stock)
-                await ctx.send(f"Removed {quantity}x {product} from the stock.")
-                # Log the removal
-                await self.log_event(ctx, f"Removed {quantity}x {product} from the stock.")
-            else:
-                await ctx.send(f"Not enough stock to remove {quantity}x {product}.")
-        else:
-            await ctx.send(f"{product} not found in stock.")
+        # Log the addition
+        await self.log_event(ctx, f"Added {quantity}x {product} to the stock at ₹{price:.2f} (INR) / ${price / 83.2:.2f} (USD)")
 
     @commands.command()
     @commands.check(is_allowed)
+    async def removeproduct(self, ctx, product: str):
+        """Remove a product from the stock."""
+        guild_stock = await self.config.guild(ctx.guild).stock()
+        if product not in guild_stock:
+            await ctx.send(f"{product} not found in stock.")
+            return
+
+        del guild_stock[product]
+        await self.config.guild(ctx.guild).stock.set(guild_stock)
+
+        embed = discord.Embed(
+            title="Product Removed",
+            color=discord.Color.red()
+        )
+        embed.add_field(
+            name="Product",
+            value=f"> {product}",
+            inline=False
+        )
+        await ctx.send(embed=embed)
+
+        # Log the removal
+        await self.log_event(ctx, f"Removed {product} from the stock.")
+
+    @commands.command()
+    @commands.has_permissions(administrator=True)
     async def setlogchannel(self, ctx, channel: discord.TextChannel):
         """Set the log channel."""
         await self.config.log_channel_id.set(channel.id)
@@ -214,20 +230,18 @@ class Manager(commands.Cog):
         await log_channel.send(embed=embed)
 
     @commands.command()
-    async def viewhistory(self, ctx, member: discord.Member = None):
-        """View a user's purchase history."""
-        if not member:
-            member = ctx.author
-
+    async def viewhistory(self, ctx, user_id: int = None):
+        """View purchase history for a specified user or yourself."""
+        user_id = str(user_id) if user_id else str(ctx.author.id)
         purchase_history = await self.config.guild(ctx.guild).purchase_history()
-        user_history = purchase_history.get(str(member.id), [])
+        user_history = purchase_history.get(user_id, [])
 
         if not user_history:
-            await ctx.send(f"{member.mention} has no purchase history.")
+            await ctx.send("No data found.")
             return
 
         embed = discord.Embed(
-            title=f"{member.display_name}'s Purchase History",
+            title="Purchase History",
             color=discord.Color.gold()
         )
 
@@ -242,12 +256,3 @@ class Manager(commands.Cog):
             )
 
         await ctx.send(embed=embed)
-
-    @commands.Cog.listener()
-    async def on_command_error(self, ctx, error):
-        if isinstance(error, commands.CheckFailure):
-            if ctx.author.id == ctx.guild.owner_id or ctx.author.guild_permissions.administrator:
-                return
-            await ctx.send("You do not have permission to use this command.")
-        else:
-            await ctx.send(f"An error occurred: {error}")
