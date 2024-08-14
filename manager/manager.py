@@ -37,20 +37,33 @@ class Manager(commands.Cog):
         return datetime.now(ist).strftime("%Y-%m-%d %H:%M:%S")
 
     async def is_allowed(ctx):
+        """Check if the user has a role that allows command usage."""
         roles = await ctx.cog.config.restricted_roles()
         if not roles:
             return True
         return any(role.id in roles for role in ctx.author.roles)
 
     async def has_grant_permissions(ctx):
+        """Check if the user has a role with granted permissions."""
         return any(role.id in await ctx.cog.config.grant_permissions() for role in ctx.author.roles)
 
     def generate_uuid(self):
         return str(uuid.uuid4())[:4].upper()
 
+    async def check_channel(ctx):
+        """Ensure command is used in the allowed channel."""
+        allowed_channel_id = 1273275915174023230
+        if ctx.channel.id != allowed_channel_id:
+            await ctx.send("Commands can only be used in the designated channel.")
+            return False
+        return True
+
     @commands.command()
     async def deliver(self, ctx, member: discord.Member, product: str, quantity: int, price: float, *, custom_text: str):
         """Deliver a product to a member with a custom message."""
+        if not await self.check_channel(ctx):
+            return
+
         stock = await self.config.stock()
         guild_stock = await self.config.guild(ctx.guild).stock()
 
@@ -114,6 +127,9 @@ class Manager(commands.Cog):
     @commands.command()
     async def stock(self, ctx):
         """Display available stock."""
+        if not await self.check_channel(ctx):
+            return
+
         guild_stock = await self.config.guild(ctx.guild).stock()
         if not guild_stock:
             await ctx.send("No stock available.")
@@ -140,6 +156,9 @@ class Manager(commands.Cog):
     @commands.check(is_allowed)
     async def addproduct(self, ctx, product: str, quantity: int, price: float, emoji: str):
         """Add a product to the stock."""
+        if not await self.check_channel(ctx):
+            return
+
         guild_stock = await self.config.guild(ctx.guild).stock()
         if product in guild_stock:
             guild_stock[product]['quantity'] += quantity
@@ -176,6 +195,9 @@ class Manager(commands.Cog):
     @commands.check(is_allowed)
     async def removeproduct(self, ctx, product: str):
         """Remove a product from the stock."""
+        if not await self.check_channel(ctx):
+            return
+
         guild_stock = await self.config.guild(ctx.guild).stock()
         if product not in guild_stock:
             await ctx.send(f"{product} not found in stock.")
@@ -229,6 +251,9 @@ class Manager(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def addrestrictedrole(self, ctx, role: discord.Role):
         """Add a role to the restricted roles list."""
+        if not await self.check_channel(ctx):
+            return
+
         restricted_roles = await self.config.restricted_roles()
         if role.id not in restricted_roles:
             restricted_roles.append(role.id)
@@ -241,6 +266,9 @@ class Manager(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def removerestrictedrole(self, ctx, role: discord.Role):
         """Remove a role from the restricted roles list."""
+        if not await self.check_channel(ctx):
+            return
+
         restricted_roles = await self.config.restricted_roles()
         if role.id in restricted_roles:
             restricted_roles.remove(role.id)
@@ -253,6 +281,9 @@ class Manager(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def grantpermission(self, ctx, role: discord.Role):
         """Grant permissions to a role."""
+        if not await self.check_channel(ctx):
+            return
+
         grant_permissions = await self.config.grant_permissions()
         if role.id not in grant_permissions:
             grant_permissions.append(role.id)
@@ -265,6 +296,9 @@ class Manager(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def revokepermission(self, ctx, role: discord.Role):
         """Revoke permissions from a role."""
+        if not await self.check_channel(ctx):
+            return
+
         grant_permissions = await self.config.grant_permissions()
         if role.id in grant_permissions:
             grant_permissions.remove(role.id)
@@ -276,6 +310,9 @@ class Manager(commands.Cog):
     @commands.command()
     async def purchasehistory(self, ctx, member: discord.Member = None):
         """Show purchase history for a member or yourself."""
+        if not await self.check_channel(ctx):
+            return
+
         member = member or ctx.author
         purchase_history = await self.config.guild(ctx.guild).purchase_history()
         history = purchase_history.get(str(member.id), [])
@@ -300,8 +337,49 @@ class Manager(commands.Cog):
 
     @commands.command()
     @commands.has_permissions(administrator=True)
+    async def viewroles(self, ctx):
+        """View the list of restricted and granted roles."""
+        if not await self.check_channel(ctx):
+            return
+
+        restricted_roles = await self.config.restricted_roles()
+        grant_permissions = await self.config.grant_permissions()
+
+        restricted_roles_names = [ctx.guild.get_role(role_id).name for role_id in restricted_roles if ctx.guild.get_role(role_id)]
+        granted_roles_names = [ctx.guild.get_role(role_id).name for role_id in grant_permissions if ctx.guild.get_role(role_id)]
+
+        embed = discord.Embed(
+            title="Roles Overview",
+            color=discord.Color.blue()
+        )
+
+        if restricted_roles_names:
+            embed.add_field(
+                name="Restricted Roles",
+                value="\n".join(restricted_roles_names),
+                inline=False
+            )
+        else:
+            embed.add_field(name="Restricted Roles", value="No restricted roles.", inline=False)
+
+        if granted_roles_names:
+            embed.add_field(
+                name="Granted Roles",
+                value="\n".join(granted_roles_names),
+                inline=False
+            )
+        else:
+            embed.add_field(name="Granted Roles", value="No roles with granted permissions.", inline=False)
+
+        await ctx.send(embed=embed)
+
+    @commands.command()
+    @commands.has_permissions(administrator=True)
     async def viewrestrictedroles(self, ctx):
         """View the list of restricted roles."""
+        if not await self.check_channel(ctx):
+            return
+
         restricted_roles = await self.config.restricted_roles()
         if not restricted_roles:
             await ctx.send("No roles are currently restricted.")
@@ -321,12 +399,15 @@ class Manager(commands.Cog):
             value="\n".join(restricted_roles_names),
             inline=False
         )
-        await ctx.send(embed=embed)quit
+        await ctx.send(embed=embed)
 
     @commands.command()
     @commands.has_permissions(administrator=True)
     async def viewgrantedroles(self, ctx):
         """View the list of roles with granted permissions."""
+        if not await self.check_channel(ctx):
+            return
+
         grant_permissions = await self.config.grant_permissions()
         if not grant_permissions:
             await ctx.send("No roles currently have granted permissions.")
