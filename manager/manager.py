@@ -56,9 +56,9 @@ class Manager(commands.Cog):
             color=discord.Color.blue()
         )
         embed.set_author(name="Frenzy Store", icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None)
-        embed.add_field(name="Here is your product >", value=product, inline=False)
-        embed.add_field(name="Amount >", value=f"${price * quantity:.2f}", inline=False)
-        embed.add_field(name="Purchase Date >", value=purchase_date, inline=False)
+        embed.add_field(name="Here is your product >", value=f"> {product}", inline=False)
+        embed.add_field(name="Amount >", value=f"> ${price * quantity:.2f}", inline=False)
+        embed.add_field(name="Purchase Date >", value=f"> {purchase_date}", inline=False)
         embed.add_field(name="\u200b", value="**- follow our [TOS](https://discord.com/channels/911622571856891934/911629489325355049) & be a smart buyer!\n- [CLICK HERE](https://discord.com/channels/911622571856891934/1134197532868739195)  to leave your __feedback__**", inline=False)
         embed.add_field(name="Custom Message", value=f"||```{custom_text}```||", inline=False)
         embed.set_footer(text=f"Vouch format: +rep {member.mention} {quantity}x {product} | No vouch, no warranty")
@@ -174,8 +174,8 @@ class Manager(commands.Cog):
 
         for record in history:
             embed.add_field(
-                name=f"{record['timestamp']}",
-                value=f"Product: {record['product']}\nQuantity: {record['quantity']}\nPrice: ${record['price']:.2f}\nMessage: {record['custom_text']}\nSold by: {record['sold_by']}",
+                name=f"__{record['timestamp']}__",
+                value=f"> **Product:** {record['product']}\n> **Quantity:** {record['quantity']}\n> **Price:** ${record['price']:.2f}\n> **Message:** {record['custom_text']}\n> **Sold by:** {record['sold_by']}",
                 inline=False
             )
 
