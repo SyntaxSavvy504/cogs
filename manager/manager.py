@@ -41,7 +41,7 @@ class Manager(commands.Cog):
             title="Frenzy Store",
             color=discord.Color.blue()
         )
-        embed.set_author(name="Frenzy Store", icon_url=self.bot.user.avatar_url)
+        embed.set_author(name="Frenzy Store", icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None)
         embed.add_field(name="Here is your product", value=product, inline=False)
         embed.add_field(name="\u200b", value="**- follow our [TOS](https://discord.com/channels/911622571856891934/911629489325355049) & be a smart buyer!\n- [CLICK HERE](https://discord.com/channels/911622571856891934/1134197532868739195)  to leave your __feedback__**", inline=False)
         embed.add_field(name="Custom Message", value=f"||{custom_text}||", inline=False)
