@@ -26,9 +26,11 @@ class Manager(commands.Cog):
         }
         self.config.register_guild(**default_server)
 
-        # Create settings.json if it doesn't exist
-        if not os.path.exists("settings.json"):
-            with open("settings.json", "w") as f:
+        # Create settings.json in the specified directory if it doesn't exist
+        settings_path = "/home/container/.local/share/Red-DiscordBot/data/pterodactyl/cogs/Manager/settings.json"
+        if not os.path.exists(settings_path):
+            os.makedirs(os.path.dirname(settings_path), exist_ok=True)
+            with open(settings_path, "w") as f:
                 json.dump(default_global, f)
 
     def get_ist_time(self):
@@ -228,17 +230,18 @@ class Manager(commands.Cog):
         await log_channel.send(embed=embed)
 
     @commands.command()
-    async def viewhistory(self, ctx):
-        """View your purchase history."""
+    async def viewhistory(self, ctx, user_id: int = None):
+        """View purchase history for a specified user or yourself."""
+        user_id = str(user_id) if user_id else str(ctx.author.id)
         purchase_history = await self.config.guild(ctx.guild).purchase_history()
-        user_history = purchase_history.get(str(ctx.author.id), [])
+        user_history = purchase_history.get(user_id, [])
 
         if not user_history:
-            await ctx.send("You have no purchase history.")
+            await ctx.send("No data found.")
             return
 
         embed = discord.Embed(
-            title="Your Purchase History",
+            title="Purchase History",
             color=discord.Color.gold()
         )
 
