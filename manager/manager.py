@@ -4,6 +4,7 @@ import uuid
 import json
 import os
 from datetime import datetime
+from pytz import timezone
 
 class Manager(commands.Cog):
     """Manage product delivery and stock."""
@@ -15,20 +16,34 @@ class Manager(commands.Cog):
             "stock": {},
             "log_channel_id": None,
             "restricted_roles": [],
+            "grant_permissions": [],
             "purchase_history": {}
         }
         self.config.register_global(**default_global)
+        default_server = {
+            "stock": {},
+            "purchase_history": {}
+        }
+        self.config.register_guild(**default_server)
 
         # Create settings.json if it doesn't exist
         if not os.path.exists("settings.json"):
             with open("settings.json", "w") as f:
                 json.dump(default_global, f)
 
+    def get_ist_time(self):
+        """Return current time in IST."""
+        ist = timezone('Asia/Kolkata')
+        return datetime.now(ist).strftime("%Y-%m-%d %H:%M:%S")
+
     async def is_allowed(ctx):
         roles = await ctx.cog.config.restricted_roles()
         if not roles:
             return True
         return any(role.id in roles for role in ctx.author.roles)
+
+    async def has_grant_permissions(ctx):
+        return any(role.id in await ctx.cog.config.grant_permissions() for role in ctx.author.roles)
 
     def generate_uuid(self):
         return str(uuid.uuid4())[:4].upper()
@@ -37,64 +52,70 @@ class Manager(commands.Cog):
     async def deliver(self, ctx, member: discord.Member, product: str, quantity: int, price: float, *, custom_text: str):
         """Deliver a product to a member with a custom message."""
         stock = await self.config.stock()
+        guild_stock = await self.config.guild(ctx.guild).stock()
 
-        if product not in stock or stock[product]['quantity'] < quantity:
+        # Check server-specific stock first
+        if product in guild_stock and guild_stock[product]['quantity'] >= quantity:
+            # Deduct the quantity from server-specific stock
+            guild_stock[product]['quantity'] -= quantity
+            if guild_stock[product]['quantity'] <= 0:
+                del guild_stock[product]
+            await self.config.guild(ctx.guild).stock.set(guild_stock)
+
+            # Calculate amount in INR and USD
+            amount_inr = price * quantity
+            usd_exchange_rate = 83.2  # Exchange rate from INR to USD
+            amount_usd = amount_inr / usd_exchange_rate
+
+            # Prepare the embed
+            uuid_code = self.generate_uuid()
+            purchase_date = self.get_ist_time()
+
+            embed = discord.Embed(
+                title="__Frenzy Store__",
+                color=discord.Color.purple()
+            )
+            embed.set_author(name="Frenzy Store", icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None)
+            embed.add_field(name="Here is your product", value=f"> {product}", inline=False)
+            embed.add_field(name="Amount", value=f"> ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)", inline=False)
+            embed.add_field(name="Purchase Date", value=f"> {purchase_date}", inline=False)
+            embed.add_field(name="\u200b", value="**- follow our [TOS](https://discord.com/channels/911622571856891934/911629489325355049) & be a smart buyer!\n- [CLICK HERE](https://discord.com/channels/911622571856891934/1134197532868739195)  to leave your __feedback__**", inline=False)
+            embed.add_field(name="Product info and credentials", value=f"||```{custom_text}```||", inline=False)
+            embed.set_footer(text=f"Vouch format: +rep {ctx.guild.owner} {quantity}x {product} | No vouch, no warranty")
+            embed.set_image(url="https://media.discordapp.net/attachments/1271370383735394357/1271370426655703142/931f5b68a813ce9d437ec11b04eec649.jpg?ex=66bdaefa&is=66bc5d7a&hm=175b7664862e5f77e5736b51eb96857ee882a3ead7638bdf87cc4ea22b7181aa&=&format=webp&width=1114&height=670")
+
+            try:
+                await member.send(embed=embed)
+                await ctx.send(f"Product delivered to {member.mention} via DM.")
+            except discord.Forbidden:
+                await ctx.send(f"Failed to deliver the product to {member.mention}. They may have DMs disabled.")
+            
+            # Log the delivery
+            await self.log_event(ctx, f"Delivered {quantity}x {product} to {member.mention} at ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)")
+
+            # Record the purchase in history
+            purchase_history = await self.config.guild(ctx.guild).purchase_history()
+            purchase_record = {
+                "product": product,
+                "quantity": quantity,
+                "price": price,
+                "custom_text": custom_text,
+                "timestamp": purchase_date,
+                "sold_by": ctx.author.name
+            }
+            if str(member.id) not in purchase_history:
+                purchase_history[str(member.id)] = []
+            purchase_history[str(member.id)].append(purchase_record)
+            await self.config.guild(ctx.guild).purchase_history.set(purchase_history)
+
+        else:
             await ctx.send(f"Insufficient stock for {product}.")
-            return
-
-        # Deduct the quantity from stock
-        stock[product]['quantity'] -= quantity
-        if stock[product]['quantity'] <= 0:
-            del stock[product]
-        await self.config.stock.set(stock)
-
-        # Prepare the embed
-        uuid_code = self.generate_uuid()
-        purchase_date = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-        amount_inr = price * quantity * 83.2  # Assuming 1 USD = 83.2 INR
-
-        embed = discord.Embed(
-            title="__Frenzy Store__",
-            color=discord.Color.purple()
-        )
-        embed.set_author(name="Frenzy Store", icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None)
-        embed.add_field(name="Here is your product", value=f"> {product}", inline=False)
-        embed.add_field(name="Amount", value=f"> ₹{amount_inr:.2f} (INR)", inline=False)
-        embed.add_field(name="Purchase Date", value=f"> {purchase_date}", inline=False)
-        embed.add_field(name="\u200b", value="**- follow our [TOS](https://discord.com/channels/911622571856891934/911629489325355049) & be a smart buyer!\n- [CLICK HERE](https://discord.com/channels/911622571856891934/1134197532868739195)  to leave your __feedback__**", inline=False)
-        embed.add_field(name="Product info and credentials", value=f"||```{custom_text}```||", inline=False)
-        embed.set_footer(text=f"Vouch format: +rep {ctx.guild.owner} {quantity}x {product} | No vouch, no warranty")
-        embed.set_image(url="https://media.discordapp.net/attachments/1271370383735394357/1271370426655703142/931f5b68a813ce9d437ec11b04eec649.jpg?ex=66bdaefa&is=66bc5d7a&hm=175b7664862e5f77e5736b51eb96857ee882a3ead7638bdf87cc4ea22b7181aa&=&format=webp&width=1114&height=670")
-
-        try:
-            await member.send(embed=embed)
-            await ctx.send(f"Product delivered to {member.mention} via DM.")
-        except discord.Forbidden:
-            await ctx.send(f"Failed to deliver the product to {member.mention}. They may have DMs disabled.")
-        
-        # Log the delivery
-        await self.log_event(ctx, f"Delivered {quantity}x {product} to {member.mention} at ₹{amount_inr:.2f} (INR)")
-
-        # Record the purchase in history
-        purchase_history = await self.config.purchase_history()
-        purchase_record = {
-            "product": product,
-            "quantity": quantity,
-            "price": price,
-            "custom_text": custom_text,
-            "timestamp": purchase_date,
-            "sold_by": ctx.author.name
-        }
-        if str(member.id) not in purchase_history:
-            purchase_history[str(member.id)] = []
-        purchase_history[str(member.id)].append(purchase_record)
-        await self.config.purchase_history.set(purchase_history)
 
     @commands.command()
     async def stock(self, ctx):
         """Display available stock."""
-        stock = await self.config.stock()
-        if not stock:
+        guild_stock = await self.config.guild(ctx.guild).stock()
+        if not guild_stock:
             await ctx.send("No stock available.")
             return
 
@@ -103,10 +124,13 @@ class Manager(commands.Cog):
             color=discord.Color.green()
         )
 
-        for idx, (product, info) in enumerate(stock.items(), start=1):
+        for idx, (product, info) in enumerate(guild_stock.items(), start=1):
+            amount_inr = info['price']
+            usd_exchange_rate = 83.2  # Exchange rate from INR to USD
+            amount_usd = amount_inr / usd_exchange_rate
             embed.add_field(
                 name=f"{idx}. {product}",
-                value=f"> **Quantity:** {info['quantity']}\n> **Price:** ${info['price']:.2f}",
+                value=f"> **Quantity:** {info['quantity']}\n> **Price:** ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)",
                 inline=False
             )
 
@@ -116,14 +140,14 @@ class Manager(commands.Cog):
     @commands.check(is_allowed)
     async def addproduct(self, ctx, product: str, quantity: int, price: float, emoji: str):
         """Add a product to the stock."""
-        stock = await self.config.stock()
-        if product in stock:
-            stock[product]['quantity'] += quantity
-            stock[product]['price'] = price
-            stock[product]['emoji'] = emoji
+        guild_stock = await self.config.guild(ctx.guild).stock()
+        if product in guild_stock:
+            guild_stock[product]['quantity'] += quantity
+            guild_stock[product]['price'] = price
+            guild_stock[product]['emoji'] = emoji
         else:
-            stock[product] = {"quantity": quantity, "price": price, "emoji": emoji}
-        await self.config.stock.set(stock)
+            guild_stock[product] = {"quantity": quantity, "price": price, "emoji": emoji}
+        await self.config.guild(ctx.guild).stock.set(guild_stock)
         embed = discord.Embed(
             title="Product Added",
             color=discord.Color.teal()
@@ -140,25 +164,25 @@ class Manager(commands.Cog):
         )
         embed.add_field(
             name="Price",
-            value=f"> ${price:.2f}",
+            value=f"> ₹{price:.2f} (INR) / ${price / 83.2:.2f} (USD)",
             inline=False
         )
         await ctx.send(embed=embed)
 
         # Log the addition
-        await self.log_event(ctx, f"Added {quantity}x {product} to the stock at ${price:.2f}")
+        await self.log_event(ctx, f"Added {quantity}x {product} to the stock at ₹{price:.2f} (INR) / ${price / 83.2:.2f} (USD)")
 
     @commands.command()
     @commands.check(is_allowed)
     async def removeproduct(self, ctx, product: str):
         """Remove a product from the stock."""
-        stock = await self.config.stock()
-        if product not in stock:
+        guild_stock = await self.config.guild(ctx.guild).stock()
+        if product not in guild_stock:
             await ctx.send(f"{product} not found in stock.")
             return
 
-        del stock[product]
-        await self.config.stock.set(stock)
+        del guild_stock[product]
+        await self.config.guild(ctx.guild).stock.set(guild_stock)
 
         embed = discord.Embed(
             title="Product Removed",
@@ -182,65 +206,94 @@ class Manager(commands.Cog):
         embed = discord.Embed(
             title="Log Channel Set",
             description=f"The log channel has been set to {channel.mention}.",
-            color=discord.Color.orange()
+            color=discord.Color.blurple()
         )
         await ctx.send(embed=embed)
 
-        # Log the setting
-        await self.log_event(ctx, f"Log channel set to {channel.mention}.")
+    async def log_event(self, ctx, message):
+        log_channel_id = await self.config.log_channel_id()
+        if not log_channel_id:
+            return
+
+        log_channel = self.bot.get_channel(log_channel_id)
+        if log_channel:
+            embed = discord.Embed(
+                title="Activity Log",
+                description=message,
+                color=discord.Color.orange(),
+                timestamp=datetime.utcnow()
+            )
+            await log_channel.send(embed=embed)
 
     @commands.command()
     @commands.has_permissions(administrator=True)
-    async def setrole(self, ctx, role: discord.Role):
-        """Restrict command usage to a specific role."""
+    async def addrestrictedrole(self, ctx, role: discord.Role):
+        """Add a role to the restricted roles list."""
         restricted_roles = await self.config.restricted_roles()
-        restricted_roles.append(role.id)
-        await self.config.restricted_roles.set(restricted_roles)
-        embed = discord.Embed(
-            title="Role Added",
-            description=f"Role {role.name} has been added to the restricted roles list.",
-            color=discord.Color.dark_blue()
-        )
-        await ctx.send(embed=embed)
-
-        # Log the role setting
-        await self.log_event(ctx, f"Role {role.name} added to restricted roles list.")
+        if role.id not in restricted_roles:
+            restricted_roles.append(role.id)
+            await self.config.restricted_roles.set(restricted_roles)
+            await ctx.send(f"Role {role.name} added to restricted roles.")
+        else:
+            await ctx.send(f"Role {role.name} is already in the restricted roles list.")
 
     @commands.command()
-    @commands.check(is_allowed)
-    async def view(self, ctx, member: discord.Member):
-        """View a member's purchase history."""
-        purchase_history = await self.config.purchase_history()
-        if str(member.id) not in purchase_history:
+    @commands.has_permissions(administrator=True)
+    async def removerestrictedrole(self, ctx, role: discord.Role):
+        """Remove a role from the restricted roles list."""
+        restricted_roles = await self.config.restricted_roles()
+        if role.id in restricted_roles:
+            restricted_roles.remove(role.id)
+            await self.config.restricted_roles.set(restricted_roles)
+            await ctx.send(f"Role {role.name} removed from restricted roles.")
+        else:
+            await ctx.send(f"Role {role.name} is not in the restricted roles list.")
+
+    @commands.command()
+    @commands.has_permissions(administrator=True)
+    async def grantpermission(self, ctx, role: discord.Role):
+        """Grant permissions to a role."""
+        grant_permissions = await self.config.grant_permissions()
+        if role.id not in grant_permissions:
+            grant_permissions.append(role.id)
+            await self.config.grant_permissions.set(grant_permissions)
+            await ctx.send(f"Permissions granted to role {role.name}.")
+        else:
+            await ctx.send(f"Role {role.name} already has permissions.")
+
+    @commands.command()
+    @commands.has_permissions(administrator=True)
+    async def revokepermission(self, ctx, role: discord.Role):
+        """Revoke permissions from a role."""
+        grant_permissions = await self.config.grant_permissions()
+        if role.id in grant_permissions:
+            grant_permissions.remove(role.id)
+            await self.config.grant_permissions.set(grant_permissions)
+            await ctx.send(f"Permissions revoked from role {role.name}.")
+        else:
+            await ctx.send(f"Role {role.name} does not have permissions.")
+
+    @commands.command()
+    async def purchasehistory(self, ctx, member: discord.Member = None):
+        """Show purchase history for a member or yourself."""
+        member = member or ctx.author
+        purchase_history = await self.config.guild(ctx.guild).purchase_history()
+        history = purchase_history.get(str(member.id), [])
+
+        if not history:
             await ctx.send(f"No purchase history found for {member.mention}.")
             return
 
-        history = purchase_history[str(member.id)]
         embed = discord.Embed(
-            title=f"{member.name}'s Purchase History",
+            title=f"Purchase History for {member.name}",
             color=discord.Color.purple()
         )
 
         for record in history:
             embed.add_field(
-                name=f"__{record['timestamp']}__",
-                value=f"> **Product:** {record['product']}\n> **Quantity:** {record['quantity']}\n> **Price:** ${record['price']:.2f}\n> **Message:** {record['custom_text']}\n> **Sold by:** {record['sold_by']}",
+                name=f"Product: {record['product']}",
+                value=f"**Quantity:** {record['quantity']}\n**Price:** ₹{record['price']:.2f} (INR)\n**Custom Text:** ||```{record['custom_text']}```||\n**Timestamp:** {record['timestamp']}\n**Sold by:** {record['sold_by']}",
                 inline=False
             )
 
         await ctx.send(embed=embed)
-
-    async def log_event(self, ctx, message):
-        log_channel_id = await self.config.log_channel_id()
-        if log_channel_id:
-            log_channel = self.bot.get_channel(log_channel_id)
-            if log_channel:
-                embed = discord.Embed(
-                    title="Log Event",
-                    description=f"> {message}",
-                    color=discord.Color.orange(),
-                    timestamp=datetime.utcnow()
-                )
-                embed.set_author(name=self.bot.user.name, icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None)
-                embed.set_footer(text=f"Logged by {ctx.author.name}")
-                await log_channel.send(embed=embed)
