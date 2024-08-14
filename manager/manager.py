@@ -38,6 +38,8 @@ class Manager(commands.Cog):
 
     async def is_allowed(ctx):
         roles = await ctx.cog.config.restricted_roles()
+        if ctx.author.id == ctx.guild.owner_id or any(role.id in await ctx.cog.config.grant_permissions() for role in ctx.author.roles):
+            return True
         if not roles:
             return True
         return any(role.id in roles for role in ctx.author.roles)
@@ -71,12 +73,14 @@ class Manager(commands.Cog):
             uuid_code = self.generate_uuid()
             purchase_date = self.get_ist_time()
 
+            emoji = guild_stock.get(product, {}).get('emoji', '')
+
             embed = discord.Embed(
                 title="__Frenzy Store__",
                 color=discord.Color.purple()
             )
             embed.set_author(name="Frenzy Store", icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None)
-            embed.add_field(name="Here is your product", value=f"> {product}", inline=False)
+            embed.add_field(name="Here is your product", value=f"> {emoji} {product}", inline=False)
             embed.add_field(name="Amount", value=f"> ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)", inline=False)
             embed.add_field(name="Purchase Date", value=f"> {purchase_date}", inline=False)
             embed.add_field(name="\u200b", value="**- follow our [TOS](https://discord.com/channels/911622571856891934/911629489325355049) & be a smart buyer!\n- [CLICK HERE](https://discord.com/channels/911622571856891934/1134197532868739195)  to leave your __feedback__**", inline=False)
@@ -91,7 +95,7 @@ class Manager(commands.Cog):
                 await ctx.send(f"Failed to deliver the product to {member.mention}. They may have DMs disabled.")
             
             # Log the delivery
-            await self.log_event(ctx, f"Delivered {quantity}x {product} to {member.mention} at ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)")
+            await self.log_event(ctx, f"Delivered {quantity}x {product} {emoji} to {member.mention} at ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)")
 
             # Record the purchase in history
             purchase_history = await self.config.guild(ctx.guild).purchase_history()
@@ -125,11 +129,12 @@ class Manager(commands.Cog):
         )
 
         for idx, (product, info) in enumerate(guild_stock.items(), start=1):
+            emoji = info.get('emoji', '')
             amount_inr = info['price']
             usd_exchange_rate = 83.2  # Exchange rate from INR to USD
             amount_usd = amount_inr / usd_exchange_rate
             embed.add_field(
-                name=f"{idx}. {product}",
+                name=f"{idx}. {emoji} {product}",
                 value=f"> **Quantity:** {info['quantity']}\n> **Price:** ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)",
                 inline=False
             )
@@ -154,7 +159,7 @@ class Manager(commands.Cog):
         )
         embed.add_field(
             name="Product",
-            value=f"> {product} {emoji}",
+            value=f"> {emoji} {product}",
             inline=False
         )
         embed.add_field(
@@ -170,7 +175,7 @@ class Manager(commands.Cog):
         await ctx.send(embed=embed)
 
         # Log the addition
-        await self.log_event(ctx, f"Added {quantity}x {product} to the stock at ₹{price:.2f} (INR) / ${price / 83.2:.2f} (USD)")
+        await self.log_event(ctx, f"Added {quantity}x {product} {emoji} to the stock at ₹{price:.2f} (INR) / ${price / 83.2:.2f} (USD)")
 
     @commands.command()
     @commands.check(is_allowed)
@@ -181,6 +186,7 @@ class Manager(commands.Cog):
             await ctx.send(f"{product} not found in stock.")
             return
 
+        emoji = guild_stock[product].get('emoji', '')
         del guild_stock[product]
         await self.config.guild(ctx.guild).stock.set(guild_stock)
 
@@ -190,13 +196,13 @@ class Manager(commands.Cog):
         )
         embed.add_field(
             name="Product",
-            value=f"> {product}",
+            value=f"> {emoji} {product}",
             inline=False
         )
         await ctx.send(embed=embed)
 
         # Log the removal
-        await self.log_event(ctx, f"Removed {product} from the stock.")
+        await self.log_event(ctx, f"Removed {product} {emoji} from the stock.")
 
     @commands.command()
     @commands.has_permissions(administrator=True)
@@ -253,3 +259,12 @@ class Manager(commands.Cog):
             )
 
         await ctx.send(embed=embed)
+
+    @commands.Cog.listener()
+    async def on_command_error(self, ctx, error):
+        if isinstance(error, commands.CheckFailure):
+            if ctx.author.id == ctx.guild.owner_id or ctx.author.guild_permissions.administrator:
+                return
+            await ctx.send("You do not have permission to use this command.")
+        else:
+            await super().on_command_error(ctx, error)
