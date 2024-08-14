@@ -153,7 +153,7 @@ class Manager(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.command()
-    @commands.check(is_allowed)
+    @commands.check(lambda ctx: self.is_allowed(ctx))
     async def addproduct(self, ctx, product: str, quantity: int, price: float, emoji: str):
         """Add a product to the stock."""
         if not await self.check_channel(ctx):
@@ -192,7 +192,7 @@ class Manager(commands.Cog):
         await self.log_event(ctx, f"Added {quantity}x {product} to the stock at ₹{price:.2f} (INR) / ${price / 83.2:.2f} (USD)")
 
     @commands.command()
-    @commands.check(is_allowed)
+    @commands.check(lambda ctx: self.is_allowed(ctx))
     async def removeproduct(self, ctx, product: str):
         """Remove a product from the stock."""
         if not await self.check_channel(ctx):
@@ -218,213 +218,42 @@ class Manager(commands.Cog):
         await ctx.send(embed=embed)
 
         # Log the removal
-        await self.log_event(ctx, f"Removed {product} from the stock.")
-
-    @commands.command()
-    @commands.has_permissions(administrator=True)
-    async def setlogchannel(self, ctx, channel: discord.TextChannel):
-        """Set the log channel."""
-        await self.config.log_channel_id.set(channel.id)
-        embed = discord.Embed(
-            title="Log Channel Set",
-            description=f"The log channel has been set to {channel.mention}.",
-            color=discord.Color.blurple()
-        )
-        await ctx.send(embed=embed)
+        await self.log_event(ctx, f"Removed {product} from the stock")
 
     async def log_event(self, ctx, message):
+        """Log events to a specific channel."""
         log_channel_id = await self.config.log_channel_id()
-        if not log_channel_id:
-            return
-
-        log_channel = self.bot.get_channel(log_channel_id)
-        if log_channel:
-            embed = discord.Embed(
-                title="Activity Log",
-                description=message,
-                color=discord.Color.orange(),
-                timestamp=datetime.utcnow()
-            )
-            await log_channel.send(embed=embed)
+        if log_channel_id:
+            log_channel = self.bot.get_channel(log_channel_id)
+            if log_channel:
+                embed = discord.Embed(
+                    title="Event Log",
+                    description=message,
+                    color=discord.Color.blue(),
+                    timestamp=datetime.utcnow()
+                )
+                await log_channel.send(embed=embed)
 
     @commands.command()
-    @commands.has_permissions(administrator=True)
-    async def addrestrictedrole(self, ctx, role: discord.Role):
-        """Add a role to the restricted roles list."""
-        if not await self.check_channel(ctx):
-            return
-
-        restricted_roles = await self.config.restricted_roles()
-        if role.id not in restricted_roles:
-            restricted_roles.append(role.id)
-            await self.config.restricted_roles.set(restricted_roles)
-            await ctx.send(f"Role {role.name} added to restricted roles.")
-        else:
-            await ctx.send(f"Role {role.name} is already in the restricted roles list.")
-
-    @commands.command()
-    @commands.has_permissions(administrator=True)
-    async def removerestrictedrole(self, ctx, role: discord.Role):
-        """Remove a role from the restricted roles list."""
-        if not await self.check_channel(ctx):
-            return
-
-        restricted_roles = await self.config.restricted_roles()
-        if role.id in restricted_roles:
-            restricted_roles.remove(role.id)
-            await self.config.restricted_roles.set(restricted_roles)
-            await ctx.send(f"Role {role.name} removed from restricted roles.")
-        else:
-            await ctx.send(f"Role {role.name} is not in the restricted roles list.")
-
-    @commands.command()
-    @commands.has_permissions(administrator=True)
-    async def grantpermission(self, ctx, role: discord.Role):
-        """Grant permissions to a role."""
-        if not await self.check_channel(ctx):
-            return
-
-        grant_permissions = await self.config.grant_permissions()
-        if role.id not in grant_permissions:
-            grant_permissions.append(role.id)
-            await self.config.grant_permissions.set(grant_permissions)
-            await ctx.send(f"Permissions granted to role {role.name}.")
-        else:
-            await ctx.send(f"Role {role.name} already has permissions.")
-
-    @commands.command()
-    @commands.has_permissions(administrator=True)
-    async def revokepermission(self, ctx, role: discord.Role):
-        """Revoke permissions from a role."""
-        if not await self.check_channel(ctx):
-            return
-
-        grant_permissions = await self.config.grant_permissions()
-        if role.id in grant_permissions:
-            grant_permissions.remove(role.id)
-            await self.config.grant_permissions.set(grant_permissions)
-            await ctx.send(f"Permissions revoked from role {role.name}.")
-        else:
-            await ctx.send(f"Role {role.name} does not have permissions.")
-
-    @commands.command()
-    async def purchasehistory(self, ctx, member: discord.Member = None):
-        """Show purchase history for a member or yourself."""
-        if not await self.check_channel(ctx):
-            return
-
-        member = member or ctx.author
-        purchase_history = await self.config.guild(ctx.guild).purchase_history()
-        history = purchase_history.get(str(member.id), [])
-
-        if not history:
-            await ctx.send(f"No purchase history found for {member.mention}.")
-            return
-
-        embed = discord.Embed(
-            title=f"Purchase History for {member.name}",
-            color=discord.Color.purple()
-        )
-
-        for record in history:
-            embed.add_field(
-                name=f"Product: {record['product']}",
-                value=f"**Quantity:** {record['quantity']}\n**Price:** ₹{record['price']:.2f} (INR)\n**Custom Text:** ||```{record['custom_text']}```||\n**Timestamp:** {record['timestamp']}\n**Sold by:** {record['sold_by']}",
-                inline=False
-            )
-
-        await ctx.send(embed=embed)
-
-    @commands.command()
-    @commands.has_permissions(administrator=True)
     async def viewroles(self, ctx):
-        """View the list of restricted and granted roles."""
-        if not await self.check_channel(ctx):
-            return
-
+        """View restricted and granted roles."""
         restricted_roles = await self.config.restricted_roles()
-        grant_permissions = await self.config.grant_permissions()
-
-        restricted_roles_names = [ctx.guild.get_role(role_id).name for role_id in restricted_roles if ctx.guild.get_role(role_id)]
-        granted_roles_names = [ctx.guild.get_role(role_id).name for role_id in grant_permissions if ctx.guild.get_role(role_id)]
+        granted_roles = await self.config.grant_permissions()
+        restricted_role_ids = [f"<@&{role_id}>" for role_id in restricted_roles]
+        granted_role_ids = [f"<@&{role_id}>" for role_id in granted_roles]
 
         embed = discord.Embed(
-            title="Roles Overview",
-            color=discord.Color.blue()
-        )
-
-        if restricted_roles_names:
-            embed.add_field(
-                name="Restricted Roles",
-                value="\n".join(restricted_roles_names),
-                inline=False
-            )
-        else:
-            embed.add_field(name="Restricted Roles", value="No restricted roles.", inline=False)
-
-        if granted_roles_names:
-            embed.add_field(
-                name="Granted Roles",
-                value="\n".join(granted_roles_names),
-                inline=False
-            )
-        else:
-            embed.add_field(name="Granted Roles", value="No roles with granted permissions.", inline=False)
-
-        await ctx.send(embed=embed)
-
-    @commands.command()
-    @commands.has_permissions(administrator=True)
-    async def viewrestrictedroles(self, ctx):
-        """View the list of restricted roles."""
-        if not await self.check_channel(ctx):
-            return
-
-        restricted_roles = await self.config.restricted_roles()
-        if not restricted_roles:
-            await ctx.send("No roles are currently restricted.")
-            return
-
-        restricted_roles_names = [ctx.guild.get_role(role_id).name for role_id in restricted_roles if ctx.guild.get_role(role_id)]
-        if not restricted_roles_names:
-            await ctx.send("No valid restricted roles found.")
-            return
-
-        embed = discord.Embed(
-            title="Restricted Roles",
-            color=discord.Color.red()
+            title="Roles Information",
+            color=discord.Color.orange()
         )
         embed.add_field(
-            name="Roles",
-            value="\n".join(restricted_roles_names),
+            name="Restricted Roles",
+            value=", ".join(restricted_role_ids) if restricted_role_ids else "No restricted roles",
             inline=False
         )
-        await ctx.send(embed=embed)
-
-    @commands.command()
-    @commands.has_permissions(administrator=True)
-    async def viewgrantedroles(self, ctx):
-        """View the list of roles with granted permissions."""
-        if not await self.check_channel(ctx):
-            return
-
-        grant_permissions = await self.config.grant_permissions()
-        if not grant_permissions:
-            await ctx.send("No roles currently have granted permissions.")
-            return
-
-        granted_roles_names = [ctx.guild.get_role(role_id).name for role_id in grant_permissions if ctx.guild.get_role(role_id)]
-        if not granted_roles_names:
-            await ctx.send("No valid roles with granted permissions found.")
-            return
-
-        embed = discord.Embed(
-            title="Roles with Granted Permissions",
-            color=discord.Color.blue()
-        )
         embed.add_field(
-            name="Roles",
-            value="\n".join(granted_roles_names),
+            name="Granted Roles",
+            value=", ".join(granted_role_ids) if granted_role_ids else "No granted roles",
             inline=False
         )
         await ctx.send(embed=embed)
