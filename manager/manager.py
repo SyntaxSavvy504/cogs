@@ -27,9 +27,14 @@ class Manager(commands.Cog):
         }
         self.config.register_guild(**default_server)
 
-        # Create settings.json if it doesn't exist
-        if not os.path.exists("settings.json"):
-            with open("settings.json", "w") as f:
+        # Ensure the cog folder and settings.json file are created
+        cog_folder = "cogs/Manager"  # Adjust the path to your cog folder structure
+        if not os.path.exists(cog_folder):
+            os.makedirs(cog_folder)
+        
+        settings_path = os.path.join(cog_folder, "settings.json")
+        if not os.path.exists(settings_path):
+            with open(settings_path, "w") as f:
                 json.dump(default_global, f)
 
     def get_ist_time(self):
