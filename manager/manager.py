@@ -92,7 +92,7 @@ class Manager(commands.Cog):
             embed.add_field(name="Here is your product", value=f"> {product}", inline=False)
             embed.add_field(name="Amount", value=f"> ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)", inline=False)
             embed.add_field(name="Purchase Date", value=f"> {purchase_date}", inline=False)
-            embed.add_field(name="\u200b", value="**- follow our [TOS](https://discord.com/channels/911622571856891934/911629489325355049) & be a smart buyer!\n- [CLICK HERE](https://discord.com/channels/911622571856891934/1134197532868739195)  to leave your __feedback__**", inline=False)
+            embed.add_field(name="\u200b", value="**- follow our [TOS](https://discord.com/channels/911622571856891934/911629489325355049) & be a smart buyer!\n- [CLICK HERE](https://discord.com/channels/911622571856891934/1134197532868739195) to leave your __feedback__**", inline=False)
             embed.add_field(name="Product info and credentials", value=f"||```{custom_text}```||", inline=False)
             embed.set_footer(text=f"Vouch format: +rep {ctx.guild.owner} {quantity}x {product} | No vouch, no warranty")
             embed.set_image(url="https://media.discordapp.net/attachments/1271370383735394357/1271370426655703142/931f5b68a813ce9d437ec11b04eec649.jpg?ex=66bdaefa&is=66bc5d7a&hm=175b7664862e5f77e5736b51eb96857ee882a3ead7638bdf87cc4ea22b7181aa&=&format=webp&width=1114&height=670")
@@ -104,7 +104,7 @@ class Manager(commands.Cog):
                 await ctx.send(f"Failed to deliver the product to {member.mention}. They may have DMs disabled.")
             
             # Log the delivery
-            await self.log_event(ctx, f"Delivered {quantity}x {product} to {member.mention} at ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)")
+            await self.log_event(ctx, f"Delivered {quantity}x {product} to {member.mention} at ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)", log_type="delivery")
 
             # Record the purchase in history
             purchase_history = await self.config.guild(ctx.guild).purchase_history()
@@ -189,7 +189,7 @@ class Manager(commands.Cog):
         await ctx.send(embed=embed)
 
         # Log the addition
-        await self.log_event(ctx, f"Added {quantity}x {product} to the stock at ₹{price:.2f} (INR) / ${price / 83.2:.2f} (USD)")
+        await self.log_event(ctx, f"Added {quantity}x {product} to the stock at ₹{price:.2f} (INR) / ${price / 83.2:.2f} (USD)", log_type="addproduct")
 
     @commands.command()
     @commands.check(lambda ctx: ctx.cog.is_allowed(ctx))
@@ -218,16 +218,16 @@ class Manager(commands.Cog):
         await ctx.send(embed=embed)
 
         # Log the removal
-        await self.log_event(ctx, f"Removed {product} from the stock")
+        await self.log_event(ctx, f"Removed {product} from the stock", log_type="removeproduct")
 
-    async def log_event(self, ctx, message):
+    async def log_event(self, ctx, message, log_type="general"):
         """Log events to a specific channel."""
         log_channel_id = await self.config.log_channel_id()
         if log_channel_id:
             log_channel = self.bot.get_channel(log_channel_id)
             if log_channel:
                 embed = discord.Embed(
-                    title="Event Log",
+                    title=f"{log_type.capitalize()} Log",
                     description=message,
                     color=discord.Color.blue(),
                     timestamp=datetime.utcnow()
@@ -235,6 +235,7 @@ class Manager(commands.Cog):
                 await log_channel.send(embed=embed)
 
     @commands.command()
+    @commands.check(lambda ctx: ctx.cog.is_allowed(ctx))
     async def viewroles(self, ctx):
         """View restricted and granted roles."""
         restricted_roles = await self.config.restricted_roles()
@@ -256,4 +257,31 @@ class Manager(commands.Cog):
             value=", ".join(granted_role_ids) if granted_role_ids else "No granted roles",
             inline=False
         )
+        await ctx.send(embed=embed)
+
+    @commands.command()
+    async def viewhistory(self, ctx):
+        """View purchase history for the user."""
+        if not await self.is_allowed(ctx):
+            await ctx.send("You do not have permission to use this command.")
+            return
+
+        purchase_history = await self.config.guild(ctx.guild).purchase_history()
+        if str(ctx.author.id) not in purchase_history:
+            await ctx.send("You have no purchase history.")
+            return
+
+        history = purchase_history[str(ctx.author.id)]
+        embed = discord.Embed(
+            title="Your Purchase History",
+            color=discord.Color.gold()
+        )
+
+        for record in history:
+            embed.add_field(
+                name=f"Product: {record['product']}",
+                value=f"> Quantity: {record['quantity']}\n> Price: ₹{record['price']:.2f}\n> Date: {record['timestamp']}\n> Custom Text: ||```{record['custom_text']}```||",
+                inline=False
+            )
+
         await ctx.send(embed=embed)
