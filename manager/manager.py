@@ -21,13 +21,13 @@ class Manager(commands.Cog):
             with open("settings.json", "w") as f:
                 json.dump(default_global, f)
 
-    async def is_allowed(ctx):
-        roles = await ctx.cog.config.servers(ctx.guild.id).restricted_roles()
+    async def is_allowed(self, ctx):
+        roles = await self.config.servers(ctx.guild.id).restricted_roles()
         if not roles:
             return True
         return any(role.id in roles for role in ctx.author.roles)
 
-    async def is_in_allowed_channel(ctx):
+    async def is_in_allowed_channel(self, ctx):
         allowed_channel_id = 1273275915174023230
         return ctx.channel.id == allowed_channel_id
 
@@ -212,56 +212,52 @@ class Manager(commands.Cog):
         await self.log_event(ctx, f"Removed {product} from the stock.")
 
     @commands.command()
-    async def setlogchannel(self, ctx, channel: discord.TextChannel):
-        """Set the log channel."""
-        await self.config.servers(ctx.guild.id).log_channel_id.set(channel.id)
-        embed = discord.Embed(
-            title="Log Channel Set",
-            description=f"||```The log channel has been set to {channel.mention}```||",
-            color=discord.Color.orange()
-        )
-        await ctx.send(embed=embed)
-        await self.log_event(ctx, f"Log channel set to {channel.mention}.")
-
-    @commands.command()
-    async def setrole(self, ctx, role: discord.Role):
-        """Restrict command usage to a specific role."""
-        server_data = await self.get_server_data(ctx.guild.id)
-        restricted_roles = server_data["restricted_roles"]
-        if role.id not in restricted_roles:
-            restricted_roles.append(role.id)
-            await self.config.servers(ctx.guild.id).restricted_roles.set(restricted_roles)
-            embed = discord.Embed(
-                title="Role Added",
-                description=f"||```Role {role.name} has been added to the restricted roles list.```||",
-                color=discord.Color.dark_blue()
-            )
-            await ctx.send(embed=embed)
-            await self.log_event(ctx, f"Added role {role.name} ({role.id}) to the restricted roles list.")
-        else:
-            await ctx.send(f"Role {role.name} is already in the restricted roles list.")
-
-    @commands.command()
     @commands.check(is_allowed)
-    async def view(self, ctx, member: discord.Member):
-        """View a member's purchase history."""
+    async def viewhistory(self, ctx):
+        """View purchase history."""
         server_data = await self.get_server_data(ctx.guild.id)
         purchase_history = server_data["purchase_history"]
-        if str(member.id) not in purchase_history:
-            await ctx.send(f"No purchase history found for {member.mention}.")
+        user_history = purchase_history.get(str(ctx.author.id), [])
+
+        if not user_history:
+            await ctx.send("No purchase history found.")
             return
 
-        history = purchase_history[str(member.id)]
         embed = discord.Embed(
-            title=f"{member.name}'s Purchase History",
+            title="Purchase History",
             color=discord.Color.purple()
         )
-
-        for record in history:
+        for record in user_history:
             embed.add_field(
-                name=f"__{record['timestamp']}__",
-                value=f"||```Product: {record['product']}```||\n||```Quantity: {record['quantity']}```||\n||```Price: ${record['price']:.2f}```||\n||```Message: {record['custom_text']}```||\n||```Sold by: {record['sold_by']}```||",
+                name=f"Product: {record['product']}",
+                value=f"> **Quantity:** {record['quantity']}\n> **Price:** ${record['price']:.2f}\n> **Timestamp:** {record['timestamp']}\n> **Custom Message:** ||```{record['custom_text']}```||",
                 inline=False
             )
 
         await ctx.send(embed=embed)
+
+    @commands.command()
+    @commands.has_permissions(administrator=True)
+    async def setallowedchannels(self, ctx, *channel_ids: int):
+        """Set allowed channels for commands."""
+        await self.config.servers(ctx.guild.id).allowed_channels.set(list(channel_ids))
+        await ctx.send(f"Allowed channels updated to: {', '.join(map(str, channel_ids))}")
+
+    @commands.command()
+    @commands.has_permissions(administrator=True)
+    async def setlogchannel(self, ctx, channel_id: int):
+        """Set the log channel."""
+        await self.config.servers(ctx.guild.id).log_channel_id.set(channel_id)
+        await ctx.send(f"Log channel set to <#{channel_id}>")
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        print(f"{self.__class__.__name__} cog loaded.")
+
+    @commands.Cog.listener()
+    async def on_message(self, message):
+        if message.author == self.bot.user:
+            return
+        # Log message event
+        if message.guild:
+            await self.log_event(message, f"Message received in {message.channel.name}: {message.content}")
