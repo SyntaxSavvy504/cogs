@@ -321,7 +321,7 @@ class Manager(commands.Cog):
             value="\n".join(restricted_roles_names),
             inline=False
         )
-        await ctx.send(embed=embed)
+        await ctx.send(embed=embed)quit
 
     @commands.command()
     @commands.has_permissions(administrator=True)
