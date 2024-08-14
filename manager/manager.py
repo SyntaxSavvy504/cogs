@@ -36,13 +36,29 @@ class Manager(commands.Cog):
     @commands.command()
     async def deliver(self, ctx, member: discord.Member, product: str, quantity: int, price: float, *, custom_text: str):
         """Deliver a product to a member with a custom message."""
+        stock = await self.config.stock()
+
+        if product not in stock or stock[product]['quantity'] < quantity:
+            await ctx.send(f"Insufficient stock for {product}.")
+            return
+
+        # Deduct the quantity from stock
+        stock[product]['quantity'] -= quantity
+        if stock[product]['quantity'] <= 0:
+            del stock[product]
+        await self.config.stock.set(stock)
+
+        # Prepare the embed
         uuid_code = self.generate_uuid()
+        purchase_date = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
         embed = discord.Embed(
             title="__Frenzy Store__",
             color=discord.Color.blue()
         )
         embed.set_author(name="Frenzy Store", icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None)
-        embed.add_field(name="Here is your product", value=product, inline=False)
+        embed.add_field(name="Here is your product >", value=product, inline=False)
+        embed.add_field(name="Amount >", value=f"${price * quantity:.2f}", inline=False)
+        embed.add_field(name="Purchase Date >", value=purchase_date, inline=False)
         embed.add_field(name="\u200b", value="**- follow our [TOS](https://discord.com/channels/911622571856891934/911629489325355049) & be a smart buyer!\n- [CLICK HERE](https://discord.com/channels/911622571856891934/1134197532868739195)  to leave your __feedback__**", inline=False)
         embed.add_field(name="Custom Message", value=f"||```{custom_text}```||", inline=False)
         embed.set_footer(text=f"Vouch format: +rep {member.mention} {quantity}x {product} | No vouch, no warranty")
@@ -64,7 +80,7 @@ class Manager(commands.Cog):
             "quantity": quantity,
             "price": price,
             "custom_text": custom_text,
-            "timestamp": str(datetime.utcnow()),
+            "timestamp": purchase_date,
             "sold_by": ctx.author.name
         }
         if str(member.id) not in purchase_history:
@@ -99,7 +115,12 @@ class Manager(commands.Cog):
     async def addproduct(self, ctx, product: str, quantity: int, price: float, emoji: str):
         """Add a product to the stock."""
         stock = await self.config.stock()
-        stock[product] = {"quantity": quantity, "price": price, "emoji": emoji}
+        if product in stock:
+            stock[product]['quantity'] += quantity
+            stock[product]['price'] = price
+            stock[product]['emoji'] = emoji
+        else:
+            stock[product] = {"quantity": quantity, "price": price, "emoji": emoji}
         await self.config.stock.set(stock)
         await ctx.send(f"Added {quantity}x {product} {emoji} at ${price:.2f} each to the stock.")
 
