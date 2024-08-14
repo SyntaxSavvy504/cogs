@@ -52,13 +52,23 @@ class Manager(commands.Cog):
             await ctx.send("You do not have the required role to use this command.")
             return False
 
-    async def check_channel(self, ctx):
-        """Ensure command is used in the allowed channel."""
-        allowed_channels = await self.config.global_get("allowed_channels")
-        if ctx.channel.id not in allowed_channels:
-            await ctx.send("Commands can only be used in the designated channel.")
+async def check_channel(self, ctx):
+    """Ensure command is used in the allowed channel."""
+    allowed_channels = await self.config.global_get("allowed_channels")
+    if isinstance(allowed_channels, str):
+        try:
+            # Convert the string back to a list of integers
+            allowed_channels = json.loads(allowed_channels)
+        except json.JSONDecodeError:
+            await ctx.send("Configuration error: Allowed channels are not in the correct format.")
             return False
-        return True
+    if not isinstance(allowed_channels, list):
+        await ctx.send("Configuration error: Allowed channels is not a list.")
+        return False
+    if ctx.channel.id not in allowed_channels:
+        await ctx.send("Commands can only be used in the designated channel.")
+        return False
+    return True
 
     @commands.command()
     async def deliver(self, ctx, member: discord.Member, product: str, quantity: int, price: float, *, custom_text: str):
