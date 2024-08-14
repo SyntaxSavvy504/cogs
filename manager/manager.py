@@ -79,7 +79,7 @@ class Manager(commands.Cog):
             embed.add_field(name="Here is your product", value=f"> {product}", inline=False)
             embed.add_field(name="Amount", value=f"> ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)", inline=False)
             embed.add_field(name="Purchase Date", value=f"> {purchase_date}", inline=False)
-            embed.add_field(name="\u200b", value="**- Follow our [TOS](https://discord.com/channels/911622571856891934/911629489325355049) & be a smart buyer!\n- [CLICK HERE](https://discord.com/channels/911622571856891934/1134197532868739195)  to leave your __feedback__**", inline=False)
+            embed.add_field(name="\u200b", value="**- follow our [TOS](https://discord.com/channels/911622571856891934/911629489325355049) & be a smart buyer!\n- [CLICK HERE](https://discord.com/channels/911622571856891934/1134197532868739195)  to leave your __feedback__**", inline=False)
             embed.add_field(name="Product info and credentials", value=f"||```{custom_text}```||", inline=False)
             embed.set_footer(text=f"Vouch format: +rep {ctx.guild.owner} {quantity}x {product} | No vouch, no warranty")
             embed.set_image(url="https://media.discordapp.net/attachments/1271370383735394357/1271370426655703142/931f5b68a813ce9d437ec11b04eec649.jpg?ex=66bdaefa&is=66bc5d7a&hm=175b7664862e5f77e5736b51eb96857ee882a3ead7638bdf87cc4ea22b7181aa&=&format=webp&width=1114&height=670")
@@ -296,4 +296,54 @@ class Manager(commands.Cog):
                 inline=False
             )
 
+        await ctx.send(embed=embed)
+
+    @commands.command()
+    @commands.has_permissions(administrator=True)
+    async def viewrestrictedroles(self, ctx):
+        """View the list of restricted roles."""
+        restricted_roles = await self.config.restricted_roles()
+        if not restricted_roles:
+            await ctx.send("No roles are currently restricted.")
+            return
+
+        restricted_roles_names = [ctx.guild.get_role(role_id).name for role_id in restricted_roles if ctx.guild.get_role(role_id)]
+        if not restricted_roles_names:
+            await ctx.send("No valid restricted roles found.")
+            return
+
+        embed = discord.Embed(
+            title="Restricted Roles",
+            color=discord.Color.red()
+        )
+        embed.add_field(
+            name="Roles",
+            value="\n".join(restricted_roles_names),
+            inline=False
+        )
+        await ctx.send(embed=embed)
+
+    @commands.command()
+    @commands.has_permissions(administrator=True)
+    async def viewgrantedroles(self, ctx):
+        """View the list of roles with granted permissions."""
+        grant_permissions = await self.config.grant_permissions()
+        if not grant_permissions:
+            await ctx.send("No roles currently have granted permissions.")
+            return
+
+        granted_roles_names = [ctx.guild.get_role(role_id).name for role_id in grant_permissions if ctx.guild.get_role(role_id)]
+        if not granted_roles_names:
+            await ctx.send("No valid roles with granted permissions found.")
+            return
+
+        embed = discord.Embed(
+            title="Roles with Granted Permissions",
+            color=discord.Color.blue()
+        )
+        embed.add_field(
+            name="Roles",
+            value="\n".join(granted_roles_names),
+            inline=False
+        )
         await ctx.send(embed=embed)
