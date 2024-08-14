@@ -53,7 +53,6 @@ class Manager(commands.Cog):
     @commands.command()
     async def deliver(self, ctx, member: discord.Member, product: str, quantity: int, price: float, *, custom_text: str):
         """Deliver a product to a member with a custom message."""
-        stock = await self.config.stock()
         guild_stock = await self.config.guild(ctx.guild).stock()
 
         # Check server-specific stock first
@@ -78,7 +77,7 @@ class Manager(commands.Cog):
                 color=discord.Color.purple()
             )
             embed.set_author(name="Frenzy Store", icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None)
-            embed.add_field(name="Here is your product", value=f"> {product}", inline=False)
+            embed.add_field(name="Here is your product", value=f"> {product} {guild_stock[product].get('emoji', '')}", inline=False)
             embed.add_field(name="Amount", value=f"> ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)", inline=False)
             embed.add_field(name="Purchase Date", value=f"> {purchase_date}", inline=False)
             embed.add_field(name="\u200b", value="**- follow our [TOS](https://discord.com/channels/911622571856891934/911629489325355049) & be a smart buyer!\n- [CLICK HERE](https://discord.com/channels/911622571856891934/1134197532868739195)  to leave your __feedback__**", inline=False)
@@ -86,8 +85,10 @@ class Manager(commands.Cog):
             embed.set_footer(text=f"Vouch format: +rep {ctx.guild.owner} {quantity}x {product} | No vouch, no warranty")
             embed.set_image(url="https://media.discordapp.net/attachments/1271370383735394357/1271370426655703142/931f5b68a813ce9d437ec11b04eec649.jpg?ex=66bdaefa&is=66bc5d7a&hm=175b7664862e5f77e5736b51eb96857ee882a3ead7638bdf87cc4ea22b7181aa&=&format=webp&width=1114&height=670")
 
+            # Try to send the embed to the user's DM
+            dm_channel = member.dm_channel or await member.create_dm()
             try:
-                await member.send(embed=embed)
+                await dm_channel.send(embed=embed)
                 await ctx.send(f"Product delivered to {member.mention} via DM.")
             except discord.Forbidden:
                 await ctx.send(f"Failed to deliver the product to {member.mention}. They may have DMs disabled.")
@@ -131,7 +132,7 @@ class Manager(commands.Cog):
             usd_exchange_rate = 83.2  # Exchange rate from INR to USD
             amount_usd = amount_inr / usd_exchange_rate
             embed.add_field(
-                name=f"{idx}. {product}",
+                name=f"{idx}. {product} {info.get('emoji', '')}",
                 value=f"> **Quantity:** {info['quantity']}\n> **Price:** ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)",
                 inline=False
             )
