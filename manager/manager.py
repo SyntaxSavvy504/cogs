@@ -38,14 +38,16 @@ class Manager(commands.Cog):
 
     async def is_allowed(ctx):
         roles = await ctx.cog.config.restricted_roles()
-        if ctx.author.id == ctx.guild.owner_id or any(role.id in await ctx.cog.config.grant_permissions() for role in ctx.author.roles):
+        grant_permissions = [role async for role in ctx.cog.config.grant_permissions()]  # Collect async generator into a list
+        if ctx.author.id == ctx.guild.owner_id or any(role.id in grant_permissions for role in ctx.author.roles):
             return True
         if not roles:
             return True
         return any(role.id in roles for role in ctx.author.roles)
 
     async def has_grant_permissions(ctx):
-        return any(role.id in await ctx.cog.config.grant_permissions() for role in ctx.author.roles)
+        grant_permissions = [role async for role in ctx.cog.config.grant_permissions()]  # Collect async generator into a list
+        return any(role.id in grant_permissions for role in ctx.author.roles)
 
     def generate_uuid(self):
         return str(uuid.uuid4())[:4].upper()
@@ -157,55 +159,33 @@ class Manager(commands.Cog):
             title="Product Added",
             color=discord.Color.teal()
         )
-        embed.add_field(
-            name="Product",
-            value=f"> {emoji} {product}",
-            inline=False
-        )
-        embed.add_field(
-            name="Quantity",
-            value=f"> {quantity}",
-            inline=False
-        )
-        embed.add_field(
-            name="Price",
-            value=f"> ₹{price:.2f} (INR) / ${price / 83.2:.2f} (USD)",
-            inline=False
-        )
+        embed.add_field(name="Product", value=product, inline=False)
+        embed.add_field(name="Quantity", value=quantity, inline=False)
+        embed.add_field(name="Price", value=f"₹{price:.2f}", inline=False)
+        embed.add_field(name="Emoji", value=emoji, inline=False)
         await ctx.send(embed=embed)
-
-        # Log the addition
-        await self.log_event(ctx, f"Added {quantity}x {product} {emoji} to the stock at ₹{price:.2f} (INR) / ${price / 83.2:.2f} (USD)")
 
     @commands.command()
     @commands.check(is_allowed)
-    async def removeproduct(self, ctx, product: str):
+    async def removeproduct(self, ctx, product: str, quantity: int):
         """Remove a product from the stock."""
         guild_stock = await self.config.guild(ctx.guild).stock()
-        if product not in guild_stock:
+        if product in guild_stock:
+            if guild_stock[product]['quantity'] >= quantity:
+                guild_stock[product]['quantity'] -= quantity
+                if guild_stock[product]['quantity'] <= 0:
+                    del guild_stock[product]
+                await self.config.guild(ctx.guild).stock.set(guild_stock)
+                await ctx.send(f"Removed {quantity}x {product} from the stock.")
+                # Log the removal
+                await self.log_event(ctx, f"Removed {quantity}x {product} from the stock.")
+            else:
+                await ctx.send(f"Not enough stock to remove {quantity}x {product}.")
+        else:
             await ctx.send(f"{product} not found in stock.")
-            return
-
-        emoji = guild_stock[product].get('emoji', '')
-        del guild_stock[product]
-        await self.config.guild(ctx.guild).stock.set(guild_stock)
-
-        embed = discord.Embed(
-            title="Product Removed",
-            color=discord.Color.red()
-        )
-        embed.add_field(
-            name="Product",
-            value=f"> {emoji} {product}",
-            inline=False
-        )
-        await ctx.send(embed=embed)
-
-        # Log the removal
-        await self.log_event(ctx, f"Removed {product} {emoji} from the stock.")
 
     @commands.command()
-    @commands.has_permissions(administrator=True)
+    @commands.check(is_allowed)
     async def setlogchannel(self, ctx, channel: discord.TextChannel):
         """Set the log channel."""
         await self.config.log_channel_id.set(channel.id)
@@ -270,4 +250,4 @@ class Manager(commands.Cog):
                 return
             await ctx.send("You do not have permission to use this command.")
         else:
-            await super().on_command_error(ctx, error)
+            await ctx.send(f"An error occurred: {error}")
