@@ -233,36 +233,32 @@ class Manager(commands.Cog):
         embed.set_footer(text=f"Logged by {ctx.author.name} at {self.get_ist_time()}")
         await log_channel.send(embed=embed)
 
-        @commands.command()
-        async def viewhistory(self, ctx, member: discord.Member = None):
-            """View a user's purchase history. If no user is mentioned, view your own history."""
-            if member is None:
-                member = ctx.author
+    @commands.command()
+    async def viewhistory(self, ctx):
+        """View your purchase history."""
+        purchase_history = await self.config.guild(ctx.guild).purchase_history()
+        user_history = purchase_history.get(str(ctx.author.id), [])
 
-            purchase_history = await self.config.guild(ctx.guild).purchase_history()
-            user_history = purchase_history.get(str(member.id), [])
+        if not user_history:
+            await ctx.send("You have no purchase history.")
+            return
 
-            if not user_history:
-                await ctx.send(f"{member.mention} has no purchase history.")
-                return
+        embed = discord.Embed(
+            title="Your Purchase History",
+            color=discord.Color.gold()
+        )
 
-            embed = discord.Embed(
-                title=f"{member.display_name}'s Purchase History",
-                color=discord.Color.gold()
+        for record in user_history:
+            amount_inr = record['price']
+            usd_exchange_rate = 83.2
+            amount_usd = amount_inr / usd_exchange_rate
+            embed.add_field(
+                name=f"Product: {record['product']}",
+                value=f"> **Quantity:** {record['quantity']}\n> **Price:** ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)\n> **Date:** {record['timestamp']}\n> **Custom Text:** ||```{record['custom_text']}```||\n> **Sold By:** {record['sold_by']}",
+                inline=False
             )
 
-            for record in user_history:
-                amount_inr = record['price']
-                usd_exchange_rate = 83.2
-                amount_usd = amount_inr / usd_exchange_rate
-                embed.add_field(
-                    name=f"Product: {record['product']}",
-                    value=f"> **Quantity:** {record['quantity']}\n> **Price:** ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)\n> **Date:** {record['timestamp']}\n> **Custom Text:** ||```{record['custom_text']}```||\n> **Sold By:** {record['sold_by']}",
-                    inline=False
-                )
-
-            await ctx.send(embed=embed)
-
+        await ctx.send(embed=embed)
 
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error):
@@ -272,3 +268,4 @@ class Manager(commands.Cog):
             await ctx.send("You do not have permission to use this command.")
         else:
             await super().on_command_error(ctx, error)
+
