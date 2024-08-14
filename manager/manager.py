@@ -15,9 +15,10 @@ class Manager(commands.Cog):
         default_global = {
             "stock": {},
             "log_channel_id": None,
-            "restricted_roles": [],
-            "grant_permissions": [],
-            "purchase_history": {}
+            "purchase_history": {},
+            "allowed_roles": [],  # Add this to keep track of allowed roles
+            "allowed_channels": [1273275915174023230],  # Default channel ID
+            "admin_roles": []  # Add this to keep track of admin roles
         }
         self.config.register_global(**default_global)
         default_server = {
@@ -36,24 +37,20 @@ class Manager(commands.Cog):
         ist = timezone('Asia/Kolkata')
         return datetime.now(ist).strftime("%Y-%m-%d %H:%M:%S")
 
-    async def is_allowed(self, ctx):
-        """Check if the user has a role that allows command usage."""
-        roles = await self.config.restricted_roles()
-        if not roles:
+    async def check_permissions(self, ctx):
+        """Check if the user has the right permissions to use the commands."""
+        allowed_roles = await self.config.global_get("allowed_roles")
+        admin_roles = await self.config.global_get("admin_roles")
+        if any(role.id in [r.id for r in ctx.author.roles] for role in ctx.guild.roles if role.id in allowed_roles) or any(role.id in [r.id for r in ctx.author.roles] for role in ctx.guild.roles if role.id in admin_roles):
             return True
-        return any(role.id in roles for role in ctx.author.roles)
-
-    async def has_grant_permissions(self, ctx):
-        """Check if the user has a role with granted permissions."""
-        return any(role.id in await self.config.grant_permissions() for role in ctx.author.roles)
-
-    def generate_uuid(self):
-        return str(uuid.uuid4()).upper()[:4]
+        else:
+            await ctx.send("You do not have the required role to use this command.")
+            return False
 
     async def check_channel(self, ctx):
         """Ensure command is used in the allowed channel."""
-        allowed_channel_id = 1273275915174023230
-        if ctx.channel.id != allowed_channel_id:
+        allowed_channels = await self.config.global_get("allowed_channels")
+        if ctx.channel.id not in allowed_channels:
             await ctx.send("Commands can only be used in the designated channel.")
             return False
         return True
@@ -61,13 +58,10 @@ class Manager(commands.Cog):
     @commands.command()
     async def deliver(self, ctx, member: discord.Member, product: str, quantity: int, price: float, *, custom_text: str):
         """Deliver a product to a member with a custom message."""
-        if not await self.check_channel(ctx):
+        if not await self.check_channel(ctx) or not await self.check_permissions(ctx):
             return
 
-        stock = await self.config.stock()
         guild_stock = await self.config.guild(ctx.guild).stock()
-
-        # Check server-specific stock first
         if product in guild_stock and guild_stock[product]['quantity'] >= quantity:
             # Deduct the quantity from server-specific stock
             guild_stock[product]['quantity'] -= quantity
@@ -81,7 +75,7 @@ class Manager(commands.Cog):
             amount_usd = amount_inr / usd_exchange_rate
 
             # Prepare the embed
-            uuid_code = self.generate_uuid()
+            uuid_code = str(uuid.uuid4()).upper()[:4]
             purchase_date = self.get_ist_time()
 
             embed = discord.Embed(
@@ -94,8 +88,8 @@ class Manager(commands.Cog):
             embed.add_field(name="Purchase Date", value=f"> {purchase_date}", inline=False)
             embed.add_field(name="\u200b", value="**- follow our [TOS](https://discord.com/channels/911622571856891934/911629489325355049) & be a smart buyer!\n- [CLICK HERE](https://discord.com/channels/911622571856891934/1134197532868739195) to leave your __feedback__**", inline=False)
             embed.add_field(name="Product info and credentials", value=f"||```{custom_text}```||", inline=False)
-            embed.set_footer(text=f"Vouch format: +rep {ctx.guild.owner} {quantity}x {product} | No vouch, no warranty")
-            embed.set_image(url="https://media.discordapp.net/attachments/1271370383735394357/1271370426655703142/931f5b68a813ce9d437ec11b04eec649.jpg?ex=66bdaefa&is=66bc5d7a&hm=175b7664862e5f77e5736b51eb96857ee882a3ead7638bdf87cc4ea22b7181aa&=&format=webp&width=1114&height=670")
+            embed.set_footer(text=f"Vouch format: +rep @UtsaV {quantity}x {product} | No vouch, no warranty")
+            embed.set_image(url="https://media.discordapp.net/attachments/1271370383735394357/1271370426655703142/931f5b68a813ce9d437ec11b04eec649.jpg")
 
             try:
                 await member.send(embed=embed)
@@ -127,7 +121,7 @@ class Manager(commands.Cog):
     @commands.command()
     async def stock(self, ctx):
         """Display available stock."""
-        if not await self.check_channel(ctx):
+        if not await self.check_channel(ctx) or not await self.check_permissions(ctx):
             return
 
         guild_stock = await self.config.guild(ctx.guild).stock()
@@ -153,10 +147,9 @@ class Manager(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.command()
-    @commands.check(lambda ctx: ctx.cog.is_allowed(ctx))
     async def addproduct(self, ctx, product: str, quantity: int, price: float, emoji: str):
         """Add a product to the stock."""
-        if not await self.check_channel(ctx):
+        if not await self.check_channel(ctx) or not await self.check_permissions(ctx):
             return
 
         guild_stock = await self.config.guild(ctx.guild).stock()
@@ -192,10 +185,9 @@ class Manager(commands.Cog):
         await self.log_event(ctx, f"Added {quantity}x {product} to the stock at ₹{price:.2f} (INR) / ${price / 83.2:.2f} (USD)", log_type="addproduct")
 
     @commands.command()
-    @commands.check(lambda ctx: ctx.cog.is_allowed(ctx))
     async def removeproduct(self, ctx, product: str):
         """Remove a product from the stock."""
-        if not await self.check_channel(ctx):
+        if not await self.check_channel(ctx) or not await self.check_permissions(ctx):
             return
 
         guild_stock = await self.config.guild(ctx.guild).stock()
@@ -222,7 +214,7 @@ class Manager(commands.Cog):
 
     async def log_event(self, ctx, message, log_type="general"):
         """Log events to a specific channel."""
-        log_channel_id = await self.config.log_channel_id()
+        log_channel_id = await self.config.global_get("log_channel_id")
         if log_channel_id:
             log_channel = self.bot.get_channel(log_channel_id)
             if log_channel:
@@ -235,35 +227,9 @@ class Manager(commands.Cog):
                 await log_channel.send(embed=embed)
 
     @commands.command()
-    @commands.check(lambda ctx: ctx.cog.is_allowed(ctx))
-    async def viewroles(self, ctx):
-        """View restricted and granted roles."""
-        restricted_roles = await self.config.restricted_roles()
-        granted_roles = await self.config.grant_permissions()
-        restricted_role_ids = [f"<@&{role_id}>" for role_id in restricted_roles]
-        granted_role_ids = [f"<@&{role_id}>" for role_id in granted_roles]
-
-        embed = discord.Embed(
-            title="Roles Information",
-            color=discord.Color.orange()
-        )
-        embed.add_field(
-            name="Restricted Roles",
-            value=", ".join(restricted_role_ids) if restricted_role_ids else "No restricted roles",
-            inline=False
-        )
-        embed.add_field(
-            name="Granted Roles",
-            value=", ".join(granted_role_ids) if granted_role_ids else "No granted roles",
-            inline=False
-        )
-        await ctx.send(embed=embed)
-
-    @commands.command()
     async def viewhistory(self, ctx):
         """View purchase history for the user."""
-        if not await self.is_allowed(ctx):
-            await ctx.send("You do not have permission to use this command.")
+        if not await self.check_permissions(ctx):
             return
 
         purchase_history = await self.config.guild(ctx.guild).purchase_history()
@@ -285,3 +251,37 @@ class Manager(commands.Cog):
             )
 
         await ctx.send(embed=embed)
+    
+    @commands.command()
+    async def setlogchannel(self, ctx, channel: discord.TextChannel):
+        """Set the channel for logging events."""
+        if await self.check_permissions(ctx):
+            await self.config.global_set("log_channel_id", channel.id)
+            await ctx.send(f"Log channel set to {channel.mention}.")
+
+    @commands.command()
+    async def setallowedroles(self, ctx, *roles: discord.Role):
+        """Set roles that can use the commands."""
+        if await self.check_permissions(ctx):
+            role_ids = [role.id for role in roles]
+            await self.config.global_set("allowed_roles", role_ids)
+            role_names = [role.name for role in roles]
+            await ctx.send(f"Allowed roles set: {', '.join(role_names)}.")
+
+    @commands.command()
+    async def setadminroles(self, ctx, *roles: discord.Role):
+        """Set roles that have admin permissions."""
+        if await self.check_permissions(ctx):
+            role_ids = [role.id for role in roles]
+            await self.config.global_set("admin_roles", role_ids)
+            role_names = [role.name for role in roles]
+            await ctx.send(f"Admin roles set: {', '.join(role_names)}.")
+
+    @commands.command()
+    async def setallowedchannels(self, ctx, *channels: discord.TextChannel):
+        """Set channels where commands can be used."""
+        if await self.check_permissions(ctx):
+            channel_ids = [channel.id for channel in channels]
+            await self.config.global_set("allowed_channels", channel_ids)
+            channel_mentions = [channel.mention for channel in channels]
+            await ctx.send(f"Allowed channels set: {', '.join(channel_mentions)}.")
