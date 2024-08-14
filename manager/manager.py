@@ -153,7 +153,7 @@ class Manager(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.command()
-    @commands.check(lambda ctx: self.is_allowed(ctx))
+    @commands.check(lambda ctx: ctx.cog.is_allowed(ctx))
     async def addproduct(self, ctx, product: str, quantity: int, price: float, emoji: str):
         """Add a product to the stock."""
         if not await self.check_channel(ctx):
@@ -192,7 +192,7 @@ class Manager(commands.Cog):
         await self.log_event(ctx, f"Added {quantity}x {product} to the stock at ₹{price:.2f} (INR) / ${price / 83.2:.2f} (USD)")
 
     @commands.command()
-    @commands.check(lambda ctx: self.is_allowed(ctx))
+    @commands.check(lambda ctx: ctx.cog.is_allowed(ctx))
     async def removeproduct(self, ctx, product: str):
         """Remove a product from the stock."""
         if not await self.check_channel(ctx):
