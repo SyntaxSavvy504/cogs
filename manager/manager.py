@@ -234,17 +234,20 @@ class Manager(commands.Cog):
         await log_channel.send(embed=embed)
 
     @commands.command()
-    async def viewhistory(self, ctx):
-        """View your purchase history."""
+    async def viewhistory(self, ctx, member: discord.Member = None):
+        """View a user's purchase history."""
+        if not member:
+            member = ctx.author
+
         purchase_history = await self.config.guild(ctx.guild).purchase_history()
-        user_history = purchase_history.get(str(ctx.author.id), [])
+        user_history = purchase_history.get(str(member.id), [])
 
         if not user_history:
-            await ctx.send("You have no purchase history.")
+            await ctx.send(f"{member.mention} has no purchase history.")
             return
 
         embed = discord.Embed(
-            title="Your Purchase History",
+            title=f"{member.display_name}'s Purchase History",
             color=discord.Color.gold()
         )
 
@@ -268,4 +271,3 @@ class Manager(commands.Cog):
             await ctx.send("You do not have permission to use this command.")
         else:
             await super().on_command_error(ctx, error)
-
