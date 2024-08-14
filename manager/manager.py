@@ -51,17 +51,19 @@ class Manager(commands.Cog):
         # Prepare the embed
         uuid_code = self.generate_uuid()
         purchase_date = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        amount_inr = price * quantity * 83.2  # Assuming 1 USD = 83.2 INR
+
         embed = discord.Embed(
             title="__Frenzy Store__",
-            color=discord.Color.blue()
+            color=discord.Color.purple()
         )
         embed.set_author(name="Frenzy Store", icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None)
         embed.add_field(name="Here is your product", value=f"> {product}", inline=False)
-        embed.add_field(name="Amount", value=f"> ${price * quantity:.2f}", inline=False)
+        embed.add_field(name="Amount", value=f"> ₹{amount_inr:.2f} (INR)", inline=False)
         embed.add_field(name="Purchase Date", value=f"> {purchase_date}", inline=False)
         embed.add_field(name="\u200b", value="**- follow our [TOS](https://discord.com/channels/911622571856891934/911629489325355049) & be a smart buyer!\n- [CLICK HERE](https://discord.com/channels/911622571856891934/1134197532868739195)  to leave your __feedback__**", inline=False)
         embed.add_field(name="Product info and credentials", value=f"||```{custom_text}```||", inline=False)
-        embed.set_footer(text=f"Vouch format: +rep {member.mention} {quantity}x {product} | No vouch, no warranty")
+        embed.set_footer(text=f"Vouch format: +rep {ctx.guild.owner} {quantity}x {product} | No vouch, no warranty")
         embed.set_image(url="https://media.discordapp.net/attachments/1271370383735394357/1271370426655703142/931f5b68a813ce9d437ec11b04eec649.jpg?ex=66bdaefa&is=66bc5d7a&hm=175b7664862e5f77e5736b51eb96857ee882a3ead7638bdf87cc4ea22b7181aa&=&format=webp&width=1114&height=670")
 
         try:
@@ -71,7 +73,7 @@ class Manager(commands.Cog):
             await ctx.send(f"Failed to deliver the product to {member.mention}. They may have DMs disabled.")
         
         # Log the delivery
-        await self.log_event(ctx, f"Delivered {quantity}x {product} to {member.mention} at ${price:.2f}")
+        await self.log_event(ctx, f"Delivered {quantity}x {product} to {member.mention} at ₹{amount_inr:.2f} (INR)")
 
         # Record the purchase in history
         purchase_history = await self.config.purchase_history()
@@ -173,6 +175,7 @@ class Manager(commands.Cog):
         await self.log_event(ctx, f"Removed {product} from the stock.")
 
     @commands.command()
+    @commands.has_permissions(administrator=True)
     async def setlogchannel(self, ctx, channel: discord.TextChannel):
         """Set the log channel."""
         await self.config.log_channel_id.set(channel.id)
@@ -183,7 +186,11 @@ class Manager(commands.Cog):
         )
         await ctx.send(embed=embed)
 
+        # Log the setting
+        await self.log_event(ctx, f"Log channel set to {channel.mention}.")
+
     @commands.command()
+    @commands.has_permissions(administrator=True)
     async def setrole(self, ctx, role: discord.Role):
         """Restrict command usage to a specific role."""
         restricted_roles = await self.config.restricted_roles()
@@ -195,6 +202,9 @@ class Manager(commands.Cog):
             color=discord.Color.dark_blue()
         )
         await ctx.send(embed=embed)
+
+        # Log the role setting
+        await self.log_event(ctx, f"Role {role.name} added to restricted roles list.")
 
     @commands.command()
     @commands.check(is_allowed)
@@ -231,6 +241,6 @@ class Manager(commands.Cog):
                     color=discord.Color.orange(),
                     timestamp=datetime.utcnow()
                 )
+                embed.set_author(name=self.bot.user.name, icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None)
                 embed.set_footer(text=f"Logged by {ctx.author.name}")
                 await log_channel.send(embed=embed)
-
