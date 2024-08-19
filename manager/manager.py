@@ -48,8 +48,9 @@ class Manager(commands.Cog):
     async def has_grant_permissions(ctx):
         return any(role.id in await ctx.cog.config.grant_permissions() for role in ctx.author.roles)
 
-    async def can_run_command(ctx):
-        allowed_channels = await ctx.cog.config.allowed_channels()
+    async def can_run_command(self, ctx):
+        """Check if the command can be run in the current channel."""
+        allowed_channels = await self.config.allowed_channels()
         if ctx.channel.id not in allowed_channels and not await ctx.author.guild_permissions.administrator:
             raise commands.DisabledCommand("You cannot use this command in this channel.")
         return True
@@ -186,35 +187,38 @@ class Manager(commands.Cog):
         await ctx.send(embed=embed)
 
         # Log the addition
-        await self.log_event(ctx, f"Added {quantity}x {product} to the stock at ₹{price:.2f} (INR) / ${price / 83.2:.2f} (USD)")
+        await self.log_event(ctx, f"Added {quantity}x {product} to the stock.")
 
     @commands.command()
     @commands.check(is_allowed)
-    async def removeproduct(self, ctx, product: str):
+    async def removeproduct(self, ctx, product: str, quantity: int):
         """Remove a product from the stock."""
         await self.can_run_command(ctx)
 
         guild_stock = await self.config.guild(ctx.guild).stock()
-        if product not in guild_stock:
-            await ctx.send(f"{product} not found in stock.")
-            return
+        if product in guild_stock:
+            if guild_stock[product]['quantity'] >= quantity:
+                guild_stock[product]['quantity'] -= quantity
+                if guild_stock[product]['quantity'] <= 0:
+                    del guild_stock[product]
+                await self.config.guild(ctx.guild).stock.set(guild_stock)
+                embed = discord.Embed(
+                    title="Product Removed",
+                    color=discord.Color.red()
+                )
+                embed.add_field(
+                    name="Product",
+                    value=f"> {product}",
+                    inline=False
+                )
+                await ctx.send(embed=embed)
 
-        del guild_stock[product]
-        await self.config.guild(ctx.guild).stock.set(guild_stock)
-
-        embed = discord.Embed(
-            title="Product Removed",
-            color=discord.Color.red()
-        )
-        embed.add_field(
-            name="Product",
-            value=f"> {product}",
-            inline=False
-        )
-        await ctx.send(embed=embed)
-
-        # Log the removal
-        await self.log_event(ctx, f"Removed {product} from the stock.")
+                # Log the removal
+                await self.log_event(ctx, f"Removed {product} from the stock.")
+            else:
+                await ctx.send("Not enough quantity to remove.")
+        else:
+            await ctx.send("Product not found in stock.")
 
     @commands.command()
     @commands.has_permissions(administrator=True)
