@@ -79,7 +79,7 @@ class Manager(commands.Cog):
             embed.add_field(name="Here is your product", value=f"> {product} {guild_stock[product].get('emoji', '')}", inline=False)
             embed.add_field(name="Amount", value=f"> ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)", inline=False)
             embed.add_field(name="Purchase Date", value=f"> {purchase_date}", inline=False)
-            embed.add_field(name="\u200b", value="**- follow our [TOS](https://discord.com/channels/911622571856891934/911629489325355049) & be a smart buyer!\n- [CLICK HERE](https://discord.com/channels/911622571856891934/1134197532868739195)  to leave your __feedback__**", inline=False)
+            embed.add_field(name="\u200b", value="**- follow our [TOS](https://discord.com/channels/911622571856891934/911629489325355049) & be a smart buyer!\n- [CLICK HERE](https://discord.com/channels/911622571856891934/1134197532868739195) to leave your __feedback__**", inline=False)
             embed.add_field(name="Product info and credentials", value=f"||```{custom_text}```||", inline=False)
             embed.set_footer(text=f"Vouch format: +rep {ctx.author.name} {quantity}x {product} | No vouch, no warranty")
             embed.set_image(url="https://media.discordapp.net/attachments/1271370383735394357/1271370426655703142/931f5b68a813ce9d437ec11b04eec649.jpg")
@@ -88,7 +88,7 @@ class Manager(commands.Cog):
             dm_channel = member.dm_channel or await member.create_dm()
             try:
                 await dm_channel.send(embed=embed)
-                await ctx.send(f"Product delivered to {member.mention} via DM.")
+                await ctx.send(f"Product `{product}` delivered to {member.mention} via DM. {self.get_ist_time()}")
             except discord.Forbidden:
                 await ctx.send(f"Failed to deliver the product to {member.mention}. They may have DMs disabled.")
             
@@ -243,8 +243,11 @@ class Manager(commands.Cog):
             await ctx.send("No data found.")
             return
 
+        user = self.bot.get_user(int(user_id)) or await self.bot.fetch_user(int(user_id))
+        username = user.name if user else "Unknown User"
+
         embed = discord.Embed(
-            title="Purchase History",
+            title=f"Purchase History for {username}",
             color=discord.Color.gold()
         )
 
