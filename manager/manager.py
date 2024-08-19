@@ -210,27 +210,10 @@ class Manager(commands.Cog):
         await self.config.log_channel_id.set(channel.id)
         embed = discord.Embed(
             title="Log Channel Set",
-            description=f"The log channel has been set to {channel.mention}.",
-            color=discord.Color.blurple()
+            color=discord.Color.blue()
         )
+        embed.add_field(name="Channel", value=f"> {channel.mention}", inline=False)
         await ctx.send(embed=embed)
-
-    async def log_event(self, ctx, message):
-        log_channel_id = await self.config.log_channel_id()
-        if not log_channel_id:
-            return
-
-        log_channel = self.bot.get_channel(log_channel_id)
-        if not log_channel:
-            return
-
-        embed = discord.Embed(
-            title="Event Log",
-            description=message,
-            color=discord.Color.orange()
-        )
-        embed.set_footer(text=f"Logged by {ctx.author.name} at {self.get_ist_time()}")
-        await log_channel.send(embed=embed)
 
     @commands.command()
     async def viewhistory(self, ctx, user_id: int = None):
@@ -257,8 +240,28 @@ class Manager(commands.Cog):
             amount_usd = amount_inr / usd_exchange_rate
             embed.add_field(
                 name=f"Product: {record['product']}",
-                value=f"> **Quantity:** {record['quantity']}\n> **Price:** ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)\n> **Date:** {record['timestamp']}\n> **Custom Text:** ||```{record['custom_text']}```||\n> **Sold By:** {record['sold_by']}",
+                value=(
+                    f"> **Quantity:** {record['quantity']}\n"
+                    f"> **Price:** ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)\n"
+                    f"> **Date:** {record['timestamp']}\n"
+                    f"> **Custom Text:** • {record['custom_text']}\n"
+                    f"> **Sold By:** {record['sold_by']}"
+                ),
                 inline=False
             )
 
         await ctx.send(embed=embed)
+
+    async def log_event(self, ctx, message):
+        """Log an event to the designated log channel."""
+        log_channel_id = await self.config.log_channel_id()
+        if log_channel_id:
+            log_channel = self.bot.get_channel(log_channel_id)
+            if log_channel:
+                embed = discord.Embed(
+                    title="Event Log",
+                    description=message,
+                    color=discord.Color.blurple(),
+                    timestamp=datetime.utcnow()
+                )
+                await log_channel.send(embed=embed)
