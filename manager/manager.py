@@ -50,69 +50,87 @@ class Manager(commands.Cog):
     def generate_uuid(self):
         return str(uuid.uuid4())[:4].upper()
 
+    def create_embed(self, title, description, fields=None, footer=None, image_url=None):
+        """Helper method to create embeds."""
+        embed = discord.Embed(title=title, description=description, color=discord.Color.purple())
+        if fields:
+            for name, value in fields.items():
+                embed.add_field(name=name, value=value, inline=False)
+        if footer:
+            embed.set_footer(text=footer)
+        if image_url:
+            embed.set_image(url=image_url)
+        return embed
+
     @commands.command()
     async def deliver(self, ctx, member: discord.Member, product: str, quantity: int, price: float, *, custom_text: str):
         """Deliver a product to a member with a custom message."""
+        if quantity <= 0 or price <= 0:
+            await ctx.send("Quantity and price must be greater than zero.")
+            return
+        
+        stock = await self.config.stock()
         guild_stock = await self.config.guild(ctx.guild).stock()
 
-        # Check server-specific stock first
-        if product in guild_stock and guild_stock[product]['quantity'] >= quantity:
-            # Deduct the quantity from server-specific stock
-            guild_stock[product]['quantity'] -= quantity
-            if guild_stock[product]['quantity'] <= 0:
-                del guild_stock[product]
-            await self.config.guild(ctx.guild).stock.set(guild_stock)
-
-            # Calculate amount in INR and USD
-            amount_inr = price * quantity
-            usd_exchange_rate = 83.2  # Exchange rate from INR to USD
-            amount_usd = amount_inr / usd_exchange_rate
-
-            # Prepare the embed
-            uuid_code = self.generate_uuid()
-            purchase_date = self.get_ist_time()
-
-            embed = discord.Embed(
-                title="__Frenzy Store__",
-                color=discord.Color.purple()
-            )
-            embed.set_author(name="Frenzy Store", icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None)
-            embed.add_field(name="Here is your product", value=f"> {product} {guild_stock[product].get('emoji', '')}", inline=False)
-            embed.add_field(name="Amount", value=f"> ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)", inline=False)
-            embed.add_field(name="Purchase Date", value=f"> {purchase_date}", inline=False)
-            embed.add_field(name="\u200b", value="**- follow our [TOS](https://discord.com/channels/911622571856891934/911629489325355049) & be a smart buyer!\n- [CLICK HERE](https://discord.com/channels/911622571856891934/1134197532868739195)  to leave your __feedback__**", inline=False)
-            embed.add_field(name="Product info and credentials", value=f"||```{custom_text}```||", inline=False)
-            embed.set_footer(text=f"Vouch format: +rep {ctx.guild.owner} {quantity}x {product} | No vouch, no warranty")
-            embed.set_image(url="https://media.discordapp.net/attachments/1271370383735394357/1271370426655703142/931f5b68a813ce9d437ec11b04eec649.jpg?ex=66bdaefa&is=66bc5d7a&hm=175b7664862e5f77e5736b51eb96857ee882a3ead7638bdf87cc4ea22b7181aa&=&format=webp&width=1114&height=670")
-
-            # Try to send the embed to the user's DM
-            dm_channel = member.dm_channel or await member.create_dm()
-            try:
-                await dm_channel.send(embed=embed)
-                await ctx.send(f"Product delivered to {member.mention} via DM.")
-            except discord.Forbidden:
-                await ctx.send(f"Failed to deliver the product to {member.mention}. They may have DMs disabled.")
-            
-            # Log the delivery
-            await self.log_event(ctx, f"Delivered {quantity}x {product} to {member.mention} at ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)")
-
-            # Record the purchase in history
-            purchase_history = await self.config.guild(ctx.guild).purchase_history()
-            purchase_record = {
-                "product": product,
-                "quantity": quantity,
-                "price": price,
-                "custom_text": custom_text,
-                "timestamp": purchase_date,
-                "sold_by": ctx.author.name
-            }
-            if str(member.id) not in purchase_history:
-                purchase_history[str(member.id)] = []
-            purchase_history[str(member.id)].append(purchase_record)
-            await self.config.guild(ctx.guild).purchase_history.set(purchase_history)
-
-        else:
+        if product not in guild_stock or guild_stock[product]['quantity'] < quantity:
             await ctx.send(f"Insufficient stock for {product}.")
+            return
+
+        # Deduct the quantity from server-specific stock
+        guild_stock[product]['quantity'] -= quantity
+        if guild_stock[product]['quantity'] <= 0:
+            del guild_stock[product]
+        await self.config.guild(ctx.guild).stock.set(guild_stock)
+
+        # Calculate amount in INR and USD
+        amount_inr = price * quantity
+        usd_exchange_rate = 83.2  # Exchange rate from INR to USD
+        amount_usd = amount_inr / usd_exchange_rate
+
+        # Prepare the embed
+        uuid_code = self.generate_uuid()
+        purchase_date = self.get_ist_time()
+
+        fields = {
+            "Here is your product": f"> {product}",
+            "Amount": f"> ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)",
+            "Purchase Date": f"> {purchase_date}",
+            "Product info and credentials": f"||```{custom_text}```||"
+        }
+        footer = f"Vouch format: +rep {ctx.author.name} {quantity}x {product} | No vouch, no warranty"
+        image_url = "https://media.discordapp.net/attachments/1271370383735394357/1271370426655703142/931f5b68a813ce9d437ec11b04eec649.jpg"
+
+        embed = self.create_embed(
+            title="__Frenzy Store__",
+            description="Here is your product",
+            fields=fields,
+            footer=footer,
+            image_url=image_url
+        )
+
+        try:
+            await member.send(embed=embed)
+            await ctx.send(f"Product delivered to {member.mention} via DM.")
+        except discord.Forbidden:
+            await ctx.send(f"Failed to deliver the product to {member.mention}. They may have DMs disabled.")
+        
+        # Log the delivery
+        await self.log_event(ctx, f"Delivered {quantity}x {product} to {member.mention} at ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)")
+
+        # Record the purchase in history
+        purchase_history = await self.config.guild(ctx.guild).purchase_history()
+        purchase_record = {
+            "product": product,
+            "quantity": quantity,
+            "price": price,
+            "custom_text": custom_text,
+            "timestamp": purchase_date,
+            "sold_by": ctx.author.name
+        }
+        if str(member.id) not in purchase_history:
+            purchase_history[str(member.id)] = []
+        purchase_history[str(member.id)].append(purchase_record)
+        await self.config.guild(ctx.guild).purchase_history.set(purchase_history)
 
     @commands.command()
     async def stock(self, ctx):
@@ -132,7 +150,7 @@ class Manager(commands.Cog):
             usd_exchange_rate = 83.2  # Exchange rate from INR to USD
             amount_usd = amount_inr / usd_exchange_rate
             embed.add_field(
-                name=f"{idx}. {product} {info.get('emoji', '')}",
+                name=f"{idx}. {product}",
                 value=f"> **Quantity:** {info['quantity']}\n> **Price:** ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)",
                 inline=False
             )
@@ -143,6 +161,10 @@ class Manager(commands.Cog):
     @commands.check(is_allowed)
     async def addproduct(self, ctx, product: str, quantity: int, price: float, emoji: str):
         """Add a product to the stock."""
+        if quantity <= 0 or price <= 0:
+            await ctx.send("Quantity and price must be greater than zero.")
+            return
+
         guild_stock = await self.config.guild(ctx.guild).stock()
         if product in guild_stock:
             guild_stock[product]['quantity'] += quantity
@@ -151,24 +173,16 @@ class Manager(commands.Cog):
         else:
             guild_stock[product] = {"quantity": quantity, "price": price, "emoji": emoji}
         await self.config.guild(ctx.guild).stock.set(guild_stock)
-        embed = discord.Embed(
+        
+        fields = {
+            "Product": f"> {product} {emoji}",
+            "Quantity": f"> {quantity}",
+            "Price": f"> ₹{price:.2f} (INR) / ${price / 83.2:.2f} (USD)"
+        }
+        embed = self.create_embed(
             title="Product Added",
-            color=discord.Color.teal()
-        )
-        embed.add_field(
-            name="Product",
-            value=f"> {product} {emoji}",
-            inline=False
-        )
-        embed.add_field(
-            name="Quantity",
-            value=f"> {quantity}",
-            inline=False
-        )
-        embed.add_field(
-            name="Price",
-            value=f"> ₹{price:.2f} (INR) / ${price / 83.2:.2f} (USD)",
-            inline=False
+            description="The product has been added to the stock.",
+            fields=fields
         )
         await ctx.send(embed=embed)
 
