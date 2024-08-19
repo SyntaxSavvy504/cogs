@@ -239,13 +239,15 @@ class Manager(commands.Cog):
             amount_inr = record['price']
             usd_exchange_rate = 83.2
             amount_usd = amount_inr / usd_exchange_rate
+            custom_text = record['custom_text'].replace('```', '')  # Remove any existing block code
+            formatted_custom_text = f"```{custom_text}```"  # Format as block code
             embed.add_field(
                 name=f"Product: {record['product']}",
                 value=(
                     f"> **Quantity:** {record['quantity']}\n"
                     f"> **Price:** ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)\n"
                     f"> **Date:** {record['timestamp']}\n"
-                    f"> **Custom Text:** • {record['custom_text']}\n"
+                    f"> **Custom Text:** {formatted_custom_text}\n"
                     f"> **Sold By:** {record['sold_by']}"
                 ),
                 inline=False
