@@ -17,8 +17,7 @@ class Manager(commands.Cog):
             "log_channel_id": None,
             "restricted_roles": [],
             "grant_permissions": [],
-            "purchase_history": {},
-            "allowed_channels": []
+            "purchase_history": {}
         }
         self.config.register_global(**default_global)
         default_server = {
@@ -48,24 +47,14 @@ class Manager(commands.Cog):
     async def has_grant_permissions(ctx):
         return any(role.id in await ctx.cog.config.grant_permissions() for role in ctx.author.roles)
 
-    async def can_run_command(self, ctx):
-        """Check if the command can be run in the current channel."""
-        allowed_channels = await self.config.allowed_channels()
-        if ctx.channel.id not in allowed_channels and not await ctx.author.guild_permissions.administrator:
-            raise commands.DisabledCommand("You cannot use this command in this channel.")
-        return True
-
     def generate_uuid(self):
         return str(uuid.uuid4())[:4].upper()
 
     @commands.command()
     async def deliver(self, ctx, member: discord.Member, product: str, quantity: int, price: float, *, custom_text: str):
         """Deliver a product to a member with a custom message."""
-        await self.can_run_command(ctx)
-
         guild_stock = await self.config.guild(ctx.guild).stock()
 
-        # Check server-specific stock first
         if product in guild_stock and guild_stock[product]['quantity'] >= quantity:
             # Deduct the quantity from server-specific stock
             guild_stock[product]['quantity'] -= quantity
@@ -92,8 +81,8 @@ class Manager(commands.Cog):
             embed.add_field(name="Purchase Date", value=f"> {purchase_date}", inline=False)
             embed.add_field(name="\u200b", value="**- follow our [TOS](https://discord.com/channels/911622571856891934/911629489325355049) & be a smart buyer!\n- [CLICK HERE](https://discord.com/channels/911622571856891934/1134197532868739195)  to leave your __feedback__**", inline=False)
             embed.add_field(name="Product info and credentials", value=f"||```{custom_text}```||", inline=False)
-            embed.set_footer(text=f"Vouch format: +rep {ctx.guild.owner} {quantity}x {product} | No vouch, no warranty")
-            embed.set_image(url="https://media.discordapp.net/attachments/1271370383735394357/1271370426655703142/931f5b68a813ce9d437ec11b04eec649.jpg?ex=66bdaefa&is=66bc5d7a&hm=175b7664862e5f77e5736b51eb96857ee882a3ead7638bdf87cc4ea22b7181aa&=&format=webp&width=1114&height=670")
+            embed.set_footer(text=f"Vouch format: +rep {ctx.author.name} {quantity}x {product} | No vouch, no warranty")
+            embed.set_image(url="https://media.discordapp.net/attachments/1271370383735394357/1271370426655703142/931f5b68a813ce9d437ec11b04eec649.jpg")
 
             # Try to send the embed to the user's DM
             dm_channel = member.dm_channel or await member.create_dm()
@@ -127,8 +116,6 @@ class Manager(commands.Cog):
     @commands.command()
     async def stock(self, ctx):
         """Display available stock."""
-        await self.can_run_command(ctx)
-
         guild_stock = await self.config.guild(ctx.guild).stock()
         if not guild_stock:
             await ctx.send("No stock available.")
@@ -155,8 +142,6 @@ class Manager(commands.Cog):
     @commands.check(is_allowed)
     async def addproduct(self, ctx, product: str, quantity: int, price: float, emoji: str):
         """Add a product to the stock."""
-        await self.can_run_command(ctx)
-
         guild_stock = await self.config.guild(ctx.guild).stock()
         if product in guild_stock:
             guild_stock[product]['quantity'] += quantity
@@ -187,14 +172,12 @@ class Manager(commands.Cog):
         await ctx.send(embed=embed)
 
         # Log the addition
-        await self.log_event(ctx, f"Added {quantity}x {product} to the stock.")
+        await self.log_event(ctx, f"Added {quantity}x {product} to the stock at ₹{price:.2f} (INR) / ${price / 83.2:.2f} (USD)")
 
     @commands.command()
     @commands.check(is_allowed)
     async def removeproduct(self, ctx, product: str, quantity: int):
-        """Remove a product from the stock."""
-        await self.can_run_command(ctx)
-
+        """Remove a specific quantity of a product from the stock."""
         guild_stock = await self.config.guild(ctx.guild).stock()
         if product in guild_stock:
             if guild_stock[product]['quantity'] >= quantity:
@@ -214,11 +197,11 @@ class Manager(commands.Cog):
                 await ctx.send(embed=embed)
 
                 # Log the removal
-                await self.log_event(ctx, f"Removed {product} from the stock.")
+                await self.log_event(ctx, f"Removed {quantity}x {product} from the stock.")
             else:
-                await ctx.send("Not enough quantity to remove.")
+                await ctx.send(f"Cannot remove more {product} than available in stock.")
         else:
-            await ctx.send("Product not found in stock.")
+            await ctx.send(f"{product} not found in stock.")
 
     @commands.command()
     @commands.has_permissions(administrator=True)
@@ -228,19 +211,6 @@ class Manager(commands.Cog):
         embed = discord.Embed(
             title="Log Channel Set",
             description=f"The log channel has been set to {channel.mention}.",
-            color=discord.Color.blurple()
-        )
-        await ctx.send(embed=embed)
-
-    @commands.command()
-    @commands.has_permissions(administrator=True)
-    async def setallowedchannels(self, ctx, *channels: discord.TextChannel):
-        """Set channels where commands can be used."""
-        allowed_channel_ids = [channel.id for channel in channels]
-        await self.config.allowed_channels.set(allowed_channel_ids)
-        embed = discord.Embed(
-            title="Allowed Channels Updated",
-            description=f"Commands can now be used in the following channels: {', '.join([channel.mention for channel in channels])}.",
             color=discord.Color.blurple()
         )
         await ctx.send(embed=embed)
@@ -265,8 +235,6 @@ class Manager(commands.Cog):
     @commands.command()
     async def viewhistory(self, ctx, user_id: int = None):
         """View purchase history for a specified user or yourself."""
-        await self.can_run_command(ctx)
-
         user_id = str(user_id) if user_id else str(ctx.author.id)
         purchase_history = await self.config.guild(ctx.guild).purchase_history()
         user_history = purchase_history.get(user_id, [])
