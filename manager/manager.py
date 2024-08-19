@@ -233,6 +233,7 @@ class Manager(commands.Cog):
             title=f"Purchase History for {username}",
             color=discord.Color.gold()
         )
+        embed.set_author(name="Purchase History", icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None)
 
         for record in user_history:
             amount_inr = record['price']
