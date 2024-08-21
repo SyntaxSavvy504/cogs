@@ -68,8 +68,8 @@ class Manager(commands.Cog):
             embed.add_field(name="Purchase Date", value=f"> {purchase_date}", inline=False)
             embed.add_field(name="\u200b", value="**- follow our [TOS](https://discord.com/channels/911622571856891934/911629489325355049) & be a smart buyer!\n- [CLICK HERE](https://discord.com/channels/911622571856891934/1134197532868739195) to leave your __feedback__**", inline=False)
             embed.add_field(name="Product info and credentials", value=f"||```{custom_text}```||", inline=False)
-            embed.add_field(name="__Vouch Format__", value=f"`{custom_text}`", inline=False)
-            embed.set_footer(text=f"Thanks for order. No vouch, no warranty")
+            embed.add_field(name="__Vouch Format__", value=f"||```{vouch_text}```||", inline=False)
+            embed.set_footer(text=f"__Thanks for order. No vouch, no warranty__")
             embed.set_image(url="https://media.discordapp.net/attachments/1271370383735394357/1271370426655703142/931f5b68a813ce9d437ec11b04eec649.jpg")
 
             # Try to send the embed to the user's DM
@@ -254,26 +254,43 @@ class Manager(commands.Cog):
         else:
             await ctx.send("Log channel not set. Please set a log channel using the `setlogchannel` command.")
 
-    @commands.command()
-    async def viewhistory(self, ctx, member: discord.Member = None):
-        """__View purchase history of a member.__"""
-        member = member or ctx.author
-        purchase_history = await self.config.guild(ctx.guild).purchase_history()
+@commands.command()
+async def viewhistory(self, ctx, member: discord.Member = None):
+    """__View purchase history of a member.__"""
+    member = member or ctx.author
+    purchase_history = await self.config.guild(ctx.guild).purchase_history()
 
-        if str(member.id) in purchase_history:
-            embed = discord.Embed(
-                title=f"{member.display_name}'s Purchase History",
-                color=discord.Color.gold()
+    if str(member.id) in purchase_history:
+        embed = discord.Embed(
+            title=f"{member.display_name}'s Purchase History",
+            color=discord.Color.gold(),
+            timestamp=datetime.utcnow()
+        )
+
+        for record in purchase_history[str(member.id)]:
+            product_name = record['product']
+            quantity = record['quantity']
+            timestamp = record['timestamp']
+            amount_inr = record['price'] * quantity
+            amount_usd = amount_inr / 83.2
+            sold_by = record['sold_by']
+            custom_text = record['custom_text']
+
+            embed.add_field(
+                name=f"**{product_name}** | `{quantity}x` | {timestamp}",
+                value=(
+                    f"**Amount:** ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)\n"
+                    f"**Sold by:** {sold_by}\n"
+                    f"• {custom_text}"
+                ),
+                inline=False
             )
-            for record in purchase_history[str(member.id)]:
-                embed.add_field(
-                    name=f"{record['product']} {record['quantity']}x | {record['timestamp']}",
-                    value=f"Amount: ₹{record['price'] * record['quantity']:.2f} (INR) / ${(record['price'] * record['quantity']) / 83.2:.2f} (USD)\nSold by: {record['sold_by']}\n• {record['custom_text']}",
-                    inline=False
-                )
-            await ctx.send(embed=embed)
-        else:
-            await ctx.send(f"No purchase history found for {member.mention}.")
+
+        embed.set_footer(text="Logged at")
+        await ctx.send(embed=embed)
+    else:
+        await ctx.send(f"No purchase history found for {member.mention}.")
+
 
     @commands.command()
     async def setlogchannel(self, ctx, channel: discord.TextChannel):
