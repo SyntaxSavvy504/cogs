@@ -13,11 +13,9 @@ class Manager(commands.Cog):
         self.bot = bot
         self.config = Config.get_conf(self, identifier=1234567890)
         default_global = {
-            "stock": {},
             "log_channel_id": None,
             "restricted_roles": [],
             "grant_permissions": [],
-            "purchase_history": {}
         }
         self.config.register_global(**default_global)
         default_server = {
@@ -59,6 +57,7 @@ class Manager(commands.Cog):
             # Prepare the embed
             uuid_code = self.generate_uuid()
             purchase_date = self.get_ist_time()
+            guild_owner = ctx.guild.owner.mention
 
             embed = discord.Embed(
                 title="__Frenzy Store__",
@@ -70,6 +69,7 @@ class Manager(commands.Cog):
             embed.add_field(name="Purchase Date", value=f"> {purchase_date}", inline=False)
             embed.add_field(name="\u200b", value="**- follow our [TOS](https://discord.com/channels/911622571856891934/911629489325355049) & be a smart buyer!\n- [CLICK HERE](https://discord.com/channels/911622571856891934/1134197532868739195) to leave your __feedback__**", inline=False)
             embed.add_field(name="Product info and credentials", value=f"||```{custom_text}```||", inline=False)
+            embed.add_field(name="Vouch Format", value=f"> +rep {guild_owner} {quantity}x {product} ₹{price * quantity:.2f} LEGIT", inline=False)
             embed.set_footer(text=f"Vouch format: +rep {ctx.author.name} {quantity}x {product} | No vouch, no warranty")
             embed.set_image(url="https://media.discordapp.net/attachments/1271370383735394357/1271370426655703142/931f5b68a813ce9d437ec11b04eec649.jpg")
 
@@ -200,72 +200,79 @@ class Manager(commands.Cog):
 
     @commands.command()
     @commands.check(is_allowed)
-    async def up(self, ctx, product: str, price: float):
-        """Update the price of a product."""
+    async def updateprice(self, ctx, product: str, price: float):
+        """Update the price of an existing product."""
         guild_stock = await self.config.guild(ctx.guild).stock()
         if product in guild_stock:
             old_price = guild_stock[product]['price']
             guild_stock[product]['price'] = price
             await self.config.guild(ctx.guild).stock.set(guild_stock)
-            embed = discord.Embed(
-                title="Price Updated",
-                color=discord.Color.blue()
-            )
-            embed.add_field(
-                name="Product",
-                value=f"> {product}",
-                inline=False
-            )
-            embed.add_field(
-                name="Old Price",
-                value=f"> ₹{old_price:.2f} (INR) / ${old_price / 83.2:.2f} (USD)",
-                inline=False
-            )
-            embed.add_field(
-                name="New Price",
-                value=f"> ₹{price:.2f} (INR) / ${price / 83.2:.2f} (USD)",
-                inline=False
-            )
-            await ctx.send(embed=embed)
-
+            await ctx.send(f"Price of `{product}` updated from ₹{old_price:.2f} to ₹{price:.2f} (INR).")
             # Log the price update
-            await self.log_event(ctx, f"Updated the price of {product} from ₹{old_price:.2f} (INR) to ₹{price:.2f} (INR).")
+            await self.log_event(ctx, f"Updated price of {product} from ₹{old_price:.2f} to ₹{price:.2f} (INR).")
         else:
-            await ctx.send(f"{product} not found in stock.")
+            await ctx.send(f"`{product}` not found in stock.")
+
+    @commands.command()
+    @commands.check(is_allowed)
+    async def setallowedchannels(self, ctx, *channel_ids: int):
+        """Set the allowed channels for bot commands."""
+        if not channel_ids:
+            await ctx.send("Please provide at least one channel ID.")
+            return
+        await self.config.guild(ctx.guild).allowed_channels.set(list(channel_ids))
+        await ctx.send(f"Allowed channels updated: {', '.join([str(cid) for cid in channel_ids])}")
+
+    @commands.command()
+    @commands.check(is_allowed)
+    async def setlogchannel(self, ctx, channel: discord.TextChannel):
+        """Set the logging channel."""
+        await self.config.log_channel_id.set(channel.id)
+        await ctx.send(f"Log channel set to {channel.mention}")
 
     @commands.command()
     @commands.check(is_allowed)
     async def viewhistory(self, ctx, member: discord.Member = None):
-        """View purchase history of a user."""
-        member = member or ctx.author
+        """View the purchase history of a member."""
+        if member is None:
+            member = ctx.author
         purchase_history = await self.config.guild(ctx.guild).purchase_history()
 
-        if str(member.id) in purchase_history and purchase_history[str(member.id)]:
-            history = purchase_history[str(member.id)]
-            embed = discord.Embed(
-                title=f"{member.name}'s Purchase History",
-                color=discord.Color.orange()
-            )
-            for record in history:
-                embed.add_field(
-                    name=f"{record['product']} ({record['quantity']}x)",
-                    value=f"> **Price:** ₹{record['price'] * record['quantity']:.2f} (INR) / ${(record['price'] * record['quantity']) / 83.2:.2f} (USD)\n> **Date:** {record['timestamp']}\n> **Custom Text:** {record['custom_text']}\n> **Sold by:** {record['sold_by']}",
-                    inline=False
-                )
-            await ctx.send(embed=embed)
-        else:
-            await ctx.send("No data found.")
+        if str(member.id) not in purchase_history:
+            await ctx.send(f"No purchase history found for {member.mention}.")
+            return
 
-    async def log_event(self, ctx, log_message: str):
-        """Log an event to the designated log channel."""
-        log_channel_id = await self.config.log_channel_id()
-        log_channel = self.bot.get_channel(log_channel_id)
-        if log_channel:
-            embed = discord.Embed(
-                title="Log Event",
-                description=log_message,
-                color=discord.Color.dark_gray(),
-                timestamp=datetime.utcnow()
+        history = purchase_history[str(member.id)]
+        embed = discord.Embed(
+            title=f"Purchase History of {member.name}",
+            color=discord.Color.blue()
+        )
+        for record in history:
+            product = record["product"]
+            quantity = record["quantity"]
+            price = record["price"]
+            timestamp = record["timestamp"]
+            custom_text = record["custom_text"]
+            embed.add_field(
+                name=f"{timestamp}",
+                value=f"> **Product:** {product}\n> **Quantity:** {quantity}\n> **Price:** ₹{price:.2f} (INR) / ${price / 83.2:.2f} (USD)\n> **Custom Text:** • {custom_text}",
+                inline=False
             )
-            embed.set_footer(text=f"Logged by {ctx.author}", icon_url=ctx.author.avatar.url if ctx.author.avatar else None)
-            await log_channel.send(embed=embed)
+
+        await ctx.send(embed=embed)
+
+    async def log_event(self, ctx, message):
+        """Log an event to the specified log channel."""
+        log_channel_id = await self.config.log_channel_id()
+        if log_channel_id:
+            log_channel = self.bot.get_channel(log_channel_id)
+            if log_channel:
+                embed = discord.Embed(
+                    description=message,
+                    color=discord.Color.orange(),
+                    timestamp=discord.utils.utcnow()
+                )
+                await log_channel.send(embed=embed)
+
+def setup(bot):
+    bot.add_cog(Manager(bot))
