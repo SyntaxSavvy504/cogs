@@ -16,8 +16,6 @@ class Manager(commands.Cog):
         default_global = {
             "stock": {},
             "log_channel_id": None,
-            "restricted_roles": [],
-            "grant_permissions": [],
             "purchase_history": {}
         }
         self.config.register_global(**default_global)
@@ -38,15 +36,6 @@ class Manager(commands.Cog):
         """Return current time in IST."""
         ist = timezone('Asia/Kolkata')
         return datetime.now(ist).strftime("%Y-%m-%d %H:%M:%S")
-
-    async def is_allowed(ctx):
-        roles = await ctx.cog.config.restricted_roles()
-        if not roles:
-            return True
-        return any(role.id in roles for role in ctx.author.roles)
-
-    async def has_grant_permissions(ctx):
-        return any(role.id in await ctx.cog.config.grant_permissions() for role in ctx.author.roles)
 
     def generate_uuid(self):
         return str(uuid.uuid4())[:4].upper()
@@ -126,8 +115,6 @@ class Manager(commands.Cog):
         else:
             await ctx.send(f"Insufficient stock for `{product}`.")
 
-    # Other commands like stock, addproduct, removeproduct, etc.
-
     @commands.command()
     async def stock(self, ctx):
         """Display available stock."""
@@ -154,7 +141,6 @@ class Manager(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.command()
-    @commands.check(is_allowed)
     async def addproduct(self, ctx, product: str, quantity: int, price: float, emoji: str):
         """Add a product to the stock."""
         guild_stock = await self.config.guild(ctx.guild).stock()
@@ -190,7 +176,6 @@ class Manager(commands.Cog):
         await self.log_event(ctx, f"Added {quantity}x {product} to the stock at ₹{price:.2f} (INR) / ${price / 83.2:.2f} (USD)")
 
     @commands.command()
-    @commands.check(is_allowed)
     async def removeproduct(self, ctx, product: str):
         """Remove a product from the stock."""
         guild_stock = await self.config.guild(ctx.guild).stock()
@@ -216,74 +201,89 @@ class Manager(commands.Cog):
         await self.log_event(ctx, f"Removed {product} from the stock")
 
     @commands.command()
-    async def viewhistory(self, ctx, member: discord.Member = None):
-        """View purchase history for a user."""
-        if member is None:
-            member = ctx.author
+    async def updateprice(self, ctx, product: str, new_price: float):
+        """Update the price of an existing product."""
+        guild_stock = await self.config.guild(ctx.guild).stock()
+        if product not in guild_stock:
+            await ctx.send(f"{product} not found in stock.")
+            return
 
+        old_price = guild_stock[product]['price']
+        guild_stock[product]['price'] = new_price
+        await self.config.guild(ctx.guild).stock.set(guild_stock)
+
+        embed = discord.Embed(
+            title="Price Updated",
+            color=discord.Color.blue()
+        )
+        embed.add_field(
+            name="Product",
+            value=f"> {product}",
+            inline=False
+        )
+        embed.add_field(
+            name="Old Price",
+            value=f"> ₹{old_price:.2f} (INR) / ${old_price / 83.2:.2f} (USD)",
+            inline=False
+        )
+        embed.add_field(
+            name="New Price",
+            value=f"> ₹{new_price:.2f} (INR) / ${new_price / 83.2:.2f} (USD)",
+            inline=False
+        )
+        await ctx.send(embed=embed)
+
+        # Log the price update
+        await self.log_event(ctx, f"Updated price of {product} from ₹{old_price:.2f} (INR) / ${old_price / 83.2:.2f} (USD) to ₹{new_price:.2f} (INR) / ${new_price / 83.2:.2f} (USD)")
+
+    @commands.command()
+    async def viewhistory(self, ctx, user: discord.User = None):
+        """View purchase history of a user. If no user is specified, shows the history of the command invoker."""
+        user = user or ctx.author
         purchase_history = await self.config.guild(ctx.guild).purchase_history()
-        history = purchase_history.get(str(member.id), [])
+        user_history = purchase_history.get(str(user.id))
 
-        if not history:
-            await ctx.send("No purchase history found for this user.")
+        if not user_history:
+            await ctx.send(f"No purchase history found for {user.mention}.")
             return
 
         embed = discord.Embed(
-            title=f"Purchase History for {member.name}",
-            color=discord.Color.blue()
+            title=f"Purchase History for {user.display_name}",
+            color=discord.Color.gold()
         )
-        for record in history:
+
+        for record in user_history:
+            product = record['product']
+            quantity = record['quantity']
+            price = record['price']
+            purchase_date = record['timestamp']
             embed.add_field(
-                name=f"{record['product']} (x{record['quantity']})",
-                value=f"> **Price:** ₹{record['price']:.2f} (INR)\n> **Purchased on:** {record['timestamp']}\n> **Sold by:** {record['sold_by']}\n> **Custom Text:** {record['custom_text']}",
+                name=f"{product} (x{quantity})",
+                value=f"> **Price:** ₹{price:.2f} (INR)\n> **Purchased on:** {purchase_date}\n> **Custom text:** {record['custom_text']}",
                 inline=False
             )
+
         await ctx.send(embed=embed)
 
-    async def log_event(self, ctx, message):
-        """Log the event to the log channel."""
-        log_channel_id = await self.config.log_channel_id()
-        if not log_channel_id:
-            return
-
-        log_channel = self.bot.get_channel(log_channel_id)
-        if log_channel:
-            embed = discord.Embed(
-                title="Event Log",
-                description=message,
-                color=discord.Color.orange(),
-                timestamp=datetime.utcnow()
-            )
-            embed.set_footer(text=f"Logged by {ctx.author.name}", icon_url=ctx.author.avatar.url if ctx.author.avatar else None)
-            await log_channel.send(embed=embed)
+    async def log_event(self, ctx, message: str):
+        """Log an event to the designated log channel."""
+        log_channel_id = await self.config.guild(ctx.guild).log_channel_id()
+        if log_channel_id:
+            log_channel = self.bot.get_channel(log_channel_id)
+            if log_channel:
+                embed = discord.Embed(
+                    title="Log Event",
+                    description=message,
+                    color=discord.Color.dark_orange(),
+                    timestamp=datetime.now()
+                )
+                embed.set_footer(text=f"Logged by {ctx.author}")
+                await log_channel.send(embed=embed)
+        else:
+            await ctx.send("Log channel not set. Use `setlogchannel` to set one.")
 
     @commands.command()
     async def setlogchannel(self, ctx, channel: discord.TextChannel):
-        """Set the channel for logging events."""
-        await self.config.log_channel_id.set(channel.id)
-        await ctx.send(f"Log channel set to {channel.mention}")
-
-    @commands.command()
-    async def restrictrole(self, ctx, role: discord.Role):
-        """Restrict bot usage to a specific role."""
-        restricted_roles = await self.config.restricted_roles()
-        if role.id not in restricted_roles:
-            restricted_roles.append(role.id)
-            await self.config.restricted_roles.set(restricted_roles)
-            await ctx.send(f"Role {role.name} has been added to the restriction list.")
-        else:
-            await ctx.send(f"Role {role.name} is already restricted.")
-
-    @commands.command()
-    async def grantpermissions(self, ctx, role: discord.Role):
-        """Grant permissions to a specific role to use certain commands."""
-        grant_permissions = await self.config.grant_permissions()
-        if role.id not in grant_permissions:
-            grant_permissions.append(role.id)
-            await self.config.grant_permissions.set(grant_permissions)
-            await ctx.send(f"Role {role.name} has been granted special permissions.")
-        else:
-            await ctx.send(f"Role {role.name} already has special permissions.")
-
-def setup(bot):
-    bot.add_cog(Manager(bot))
+        """Set the log channel for logging events."""
+        await self.config.guild(ctx.guild).log_channel_id.set(channel.id)
+        await ctx.send(f"Log channel set to {channel.mention}.")
