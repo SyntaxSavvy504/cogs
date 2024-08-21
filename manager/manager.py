@@ -218,7 +218,7 @@ class Manager(commands.Cog):
 
     async def log_event(self, ctx, message):
         """Log an event to the specified log channel."""
-        log_channel_id = await self.config.global().log_channel_id()
+        log_channel_id = await self.config.global_.log_channel_id()  # Use global_ instead of global
         if log_channel_id:
             channel = self.bot.get_channel(int(log_channel_id))
             if channel:
