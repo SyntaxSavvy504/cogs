@@ -5,7 +5,6 @@ import json
 import os
 from datetime import datetime
 from pytz import timezone
-import asyncio
 
 class Manager(commands.Cog):
     """Manage product delivery and stock."""
@@ -73,13 +72,17 @@ class Manager(commands.Cog):
             uuid_code = self.generate_uuid()
             purchase_date = self.get_ist_time()
 
+            amount_inr = price * quantity
+            usd_exchange_rate = 83.2  # Exchange rate from INR to USD
+            amount_usd = amount_inr / usd_exchange_rate
+
             embed = discord.Embed(
                 title="__Frenzy Store__",
                 color=discord.Color.purple()
             )
             embed.set_author(name="Frenzy Store", icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None)
             embed.add_field(name="Here is your product", value=f"> {product} {guild_stock[product].get('emoji', '')}", inline=False)
-            embed.add_field(name="Amount", value=f"> ₹{price * quantity:.2f} (INR) / ${(price * quantity) / 83.2:.2f} (USD)", inline=False)
+            embed.add_field(name="Amount", value=f"> ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)", inline=False)
             embed.add_field(name="Purchase Date", value=f"> {purchase_date}", inline=False)
             embed.add_field(name="\u200b", value="**- follow our [TOS](https://discord.com/channels/911622571856891934/911629489325355049) & be a smart buyer!\n- [CLICK HERE](https://discord.com/channels/911622571856891934/1134197532868739195) to leave your __feedback__**", inline=False)
             embed.add_field(name="Product info and credentials", value=f"||```{custom_text}```||", inline=False)
@@ -100,7 +103,7 @@ class Manager(commands.Cog):
                 await self.config.guild(ctx.guild).stock.set(guild_stock)
 
                 # Log the delivery
-                await self.log_event(ctx, f"Delivered {quantity}x {product} to {member.mention} at ₹{price * quantity:.2f} (INR) / ${(price * quantity) / 83.2:.2f} (USD)")
+                await self.log_event(ctx, f"Delivered {quantity}x {product} to {member.mention} at ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)")
 
                 # Record the purchase in history
                 purchase_history = await self.config.guild(ctx.guild).purchase_history()
@@ -185,57 +188,33 @@ class Manager(commands.Cog):
 
     @commands.command()
     @commands.check(is_allowed)
-    async def removeproduct(self, ctx, product: str, quantity: int):
-        """Remove a specific quantity of a product from the stock."""
+    async def removeproduct(self, ctx, product: str):
+        """Remove a product from the stock."""
         guild_stock = await self.config.guild(ctx.guild).stock()
         if product in guild_stock:
-            if guild_stock[product]['quantity'] >= quantity:
-                guild_stock[product]['quantity'] -= quantity
-                if guild_stock[product]['quantity'] <= 0:
-                    del guild_stock[product]
-                await self.config.guild(ctx.guild).stock.set(guild_stock)
-                embed = discord.Embed(
-                    title="Product Removed",
-                    color=discord.Color.red()
-                )
-                embed.add_field(
-                    name="Product",
-                    value=f"> {product}",
-                    inline=False
-                )
-                embed.add_field(
-                    name="Quantity Removed",
-                    value=f"> {quantity}",
-                    inline=False
-                )
-                await ctx.send(embed=embed)
+            del guild_stock[product]
+            await self.config.guild(ctx.guild).stock.set(guild_stock)
+            embed = discord.Embed(
+                title="Product Removed",
+                color=discord.Color.red()
+            )
+            embed.add_field(
+                name="Product",
+                value=f"> {product}",
+                inline=False
+            )
+            await ctx.send(embed=embed)
 
-                # Log the removal
-                await self.log_event(ctx, f"Removed {quantity}x {product} from the stock")
-            else:
-                await ctx.send(f"Not enough stock to remove {quantity}x {product}.")
+            # Log the removal
+            await self.log_event(ctx, f"Removed {product} from the stock")
         else:
             await ctx.send(f"Product `{product}` not found in stock.")
 
     async def log_event(self, ctx, message):
-        """Log an event to the specified log channel."""
+        """Log an event to the log channel if configured."""
         log_channel_id = await self.config.global().log_channel_id()
         if log_channel_id:
-            channel = self.bot.get_channel(int(log_channel_id))
-            if channel:
-                await channel.send(f"[{self.get_ist_time()}] {message}")
+            log_channel = self.bot.get_channel(log_channel_id)
+            if log_channel:
+                await log_channel.send(f"{message} - {ctx.author} at {self.get_ist_time()}")
 
-    @commands.command()
-    @commands.has_permissions(administrator=True)
-    async def setallowedchannels(self, ctx, *channels: discord.TextChannel):
-        """Set allowed channels for command usage."""
-        channel_ids = [str(channel.id) for channel in channels]
-        await self.config.global().allowed_channels.set(channel_ids)
-        await ctx.send(f"Allowed channels updated to: {', '.join([channel.mention for channel in channels])}")
-
-    @commands.command()
-    @commands.has_permissions(administrator=True)
-    async def setlogchannel(self, ctx, channel: discord.TextChannel):
-        """Set the log channel for event logging."""
-        await self.config.global().log_channel_id.set(channel.id)
-        await ctx.send(f"Log channel set to: {channel.mention}")
