@@ -16,6 +16,7 @@ class Manager(commands.Cog):
             "log_channel_id": None,
             "restricted_roles": [],
             "grant_permissions": [],
+            "allowed_channels": []
         }
         self.config.register_global(**default_global)
         default_server = {
@@ -57,6 +58,7 @@ class Manager(commands.Cog):
             # Prepare the embed
             uuid_code = self.generate_uuid()
             purchase_date = self.get_ist_time()
+            vouch_text = f"+rep @UtsaV 1x nitro 295 INR legit"  # Placeholder text for vouch
 
             embed = discord.Embed(
                 title="__Frenzy Store__",
@@ -200,24 +202,18 @@ class Manager(commands.Cog):
     @commands.command()
     @commands.check(is_allowed)
     async def updateprice(self, ctx, product: str, price: float):
-        """Update the price of an existing product."""
+        """Update the price of a product."""
         guild_stock = await self.config.guild(ctx.guild).stock()
         if product in guild_stock:
-            old_price = guild_stock[product]['price']
             guild_stock[product]['price'] = price
             await self.config.guild(ctx.guild).stock.set(guild_stock)
             embed = discord.Embed(
-                title="Product Price Updated",
-                color=discord.Color.blue()
+                title="Price Updated",
+                color=discord.Color.gold()
             )
             embed.add_field(
                 name="Product",
                 value=f"> {product}",
-                inline=False
-            )
-            embed.add_field(
-                name="Old Price",
-                value=f"> ₹{old_price:.2f} (INR) / ${old_price / 83.2:.2f} (USD)",
                 inline=False
             )
             embed.add_field(
@@ -228,90 +224,61 @@ class Manager(commands.Cog):
             await ctx.send(embed=embed)
 
             # Log the price update
-            await self.log_event(ctx, f"Updated price of {product} from ₹{old_price:.2f} (INR) / ${old_price / 83.2:.2f} (USD) to ₹{price:.2f} (INR) / ${price / 83.2:.2f} (USD)")
+            await self.log_event(ctx, f"Updated the price of {product} to ₹{price:.2f} (INR) / ${price / 83.2:.2f} (USD).")
         else:
             await ctx.send(f"{product} not found in stock.")
 
-    async def log_event(self, ctx, event_description: str):
-        """Log the event to the log channel."""
-        log_channel_id = await self.config.log_channel_id()
+    @commands.command()
+    @commands.check(is_allowed)
+    async def setallowedchannels(self, ctx, *channel_ids: int):
+        """Set the channels where commands are allowed to be used."""
+        await self.config.global_config(allowed_channels=channel_ids)
+        await ctx.send(f"Allowed channels set to: {', '.join(map(str, channel_ids))}")
+
+    @commands.command()
+    @commands.check(is_allowed)
+    async def setlogchannel(self, ctx, channel_id: int):
+        """Set the channel for logging events."""
+        await self.config.global_config(log_channel_id=channel_id)
+        await ctx.send(f"Log channel set to <#{channel_id}>")
+
+    async def log_event(self, ctx, message):
+        """Log events to the configured log channel."""
+        log_channel_id = await self.config.global_config.log_channel_id()
         if log_channel_id:
-            log_channel = ctx.guild.get_channel(log_channel_id)
+            log_channel = self.bot.get_channel(log_channel_id)
             if log_channel:
                 embed = discord.Embed(
                     title="Event Log",
-                    color=discord.Color.orange()
+                    description=message,
+                    color=discord.Color.blue()
                 )
-                embed.add_field(
-                    name="Event",
-                    value=f"> {event_description}",
-                    inline=False
-                )
-                embed.set_footer(text=f"Logged at {self.get_ist_time()}")
+                embed.set_footer(text=f"Event time: {self.get_ist_time()}")
                 await log_channel.send(embed=embed)
-            else:
-                await ctx.send("Log channel not found. Please set a valid log channel.")
-        else:
-            await ctx.send("Log channel not set. Please set a log channel using the `setlogchannel` command.")
 
-@commands.command()
-async def viewhistory(self, ctx, member: discord.Member = None):
-    """__View purchase history of a member.__"""
-    member = member or ctx.author
-    purchase_history = await self.config.guild(ctx.guild).purchase_history()
+    @commands.command()
+    @commands.check(has_grant_permissions)
+    async def viewhistory(self, ctx):
+        """View purchase history."""
+        purchase_history = await self.config.guild(ctx.guild).purchase_history()
+        if not purchase_history:
+            await ctx.send("No purchase history available.")
+            return
 
-    if str(member.id) in purchase_history:
         embed = discord.Embed(
-            title=f"{member.display_name}'s Purchase History",
-            color=discord.Color.gold(),
-            timestamp=datetime.utcnow()
+            title="Purchase History",
+            color=discord.Color.orange()
         )
 
-        for record in purchase_history[str(member.id)]:
-            product_name = record['product']
-            quantity = record['quantity']
-            timestamp = record['timestamp']
-            amount_inr = record['price'] * quantity
-            amount_usd = amount_inr / 83.2
-            sold_by = record['sold_by']
-            custom_text = record['custom_text']
+        for user_id, history in purchase_history.items():
+            user = self.bot.get_user(int(user_id))
+            if user:
+                embed.add_field(
+                    name=f"Purchases for {user.name}",
+                    value="\n".join(
+                        f"> {record['quantity']}x {record['product']} at ₹{record['price']:.2f} (INR) / ${record['price'] / 83.2:.2f} (USD) on {record['timestamp']}" for record in history
+                    ),
+                    inline=False
+                )
 
-            embed.add_field(
-                name=f"**{product_name}** | `{quantity}x` | {timestamp}",
-                value=(
-                    f"**Amount:** ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)\n"
-                    f"**Sold by:** {sold_by}\n"
-                    f"• {custom_text}"
-                ),
-                inline=False
-            )
-
-        embed.set_footer(text="Logged at")
         await ctx.send(embed=embed)
-    else:
-        await ctx.send(f"No purchase history found for {member.mention}.")
-
-
-    @commands.command()
-    async def setlogchannel(self, ctx, channel: discord.TextChannel):
-        """Set the log channel for events."""
-        await self.config.log_channel_id.set(channel.id)
-        await ctx.send(f"Log channel set to {channel.mention}")
-
-    @commands.command()
-    async def setallowedchannels(self, ctx, *channel_ids: int):
-        """Set channels where commands can be used."""
-        await self.config.allowed_channels.set(list(channel_ids))
-        await ctx.send(f"Allowed channels updated: {', '.join([str(id) for id in channel_ids])}")
-
-    @commands.command()
-    async def setrestrictedroles(self, ctx, *roles: discord.Role):
-        """Set roles that can use restricted commands."""
-        await self.config.restricted_roles.set([role.id for role in roles])
-        await ctx.send(f"Restricted roles updated: {', '.join([role.name for role in roles])}")
-
-    @commands.command()
-    async def setgrantpermissions(self, ctx, *roles: discord.Role):
-        """Set roles that have grant permissions."""
-        await self.config.grant_permissions.set([role.id for role in roles])
-        await ctx.send(f"Grant permissions updated: {', '.join([role.name for role in roles])}")
