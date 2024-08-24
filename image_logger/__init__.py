@@ -1,5 +1,5 @@
-from .imagelogger import ImageLogger
+from .image_logger import ImageLogger
 
 async def setup(bot):
-    bot.add_cog(ImageLogger(bot))
-
+    cog = ImageLogger(bot)
+    await bot.add_cog(cog)
