@@ -28,7 +28,6 @@ class ImageLogger(commands.Cog):
                                 f"**User:** {message.author.mention} ({message.author})\n"
                                 f"**Channel:** {message.channel.mention} (ID: {message.channel.id})\n"
                                 f"**Message ID:** {message.id}\n"
-                                f"**Deleted by:** {message.author.mention} ({message.author})\n"
                                 f"**Date & Time:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
                             ),
                             color=discord.Color.purple(),  # Set embed color to purple
