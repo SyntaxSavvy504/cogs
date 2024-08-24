@@ -28,21 +28,20 @@ class ImageLogger(commands.Cog):
                                 f"**User:** {message.author.mention} ({message.author})\n"
                                 f"**Channel:** {message.channel.mention} (ID: {message.channel.id})\n"
                                 f"**Message ID:** {message.id}\n"
-                                f"**Deleted by:** {message.author.mention} ({message.author})\n"  # If the message deletion event provides this information
                                 f"**Date & Time:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
                             ),
-                            color=discord.Color.purple(),  # Set embed color to purple
+                            color=discord.Color.purple(),
                             timestamp=datetime.now()
                         )
                         embed.set_footer(text=f"User ID: {message.author.id}")
                         embed.set_image(url=attachment.url)
 
-                        # Assuming the image might have some tags or additional information
+                        # Logging additional attachment information
                         embed.add_field(
                             name="Attachment Info",
                             value=(
                                 f"**Filename:** {attachment.filename}\n"
-                                f"**Size:** {attachment.size / 1000:.2f} KB\n"
+                                f"**Size:** {attachment.size / 1024:.2f} KB\n"
                                 f"**URL:** [Click here]({attachment.url})"
                             ),
                             inline=False
@@ -63,7 +62,7 @@ class ImageLogger(commands.Cog):
         embed = discord.Embed(
             title="Image Log Channel Set",
             description=f"Image log channel has been set to {channel.mention}.",
-            color=discord.Color.purple()  # Set embed color to purple
+            color=discord.Color.purple()
         )
         await ctx.send(embed=embed)
 
@@ -76,16 +75,27 @@ class ImageLogger(commands.Cog):
             embed = discord.Embed(
                 title="Current Image Log Channel",
                 description=f"The current image log channel is {channel.mention}.",
-                color=discord.Color.purple()  # Set embed color to purple
+                color=discord.Color.purple()
             )
             await ctx.send(embed=embed)
         else:
             embed = discord.Embed(
                 title="No Image Log Channel Set",
                 description="The image log channel has not been set. Use `setimagelogchannel` to set one.",
-                color=discord.Color.purple()  # Set embed color to purple
+                color=discord.Color.purple()
             )
             await ctx.send(embed=embed)
+
+    @commands.command()
+    async def clearimagelogchannel(self, ctx):
+        """Clears the current image log channel setting."""
+        await self.config.guild(ctx.guild).image_log_channel_id.set(None)
+        embed = discord.Embed(
+            title="Image Log Channel Cleared",
+            description="The image log channel has been cleared.",
+            color=discord.Color.purple()
+        )
+        await ctx.send(embed=embed)
 
 # To add this cog to your bot, use:
 # bot.add_cog(ImageLogger(bot))
