@@ -85,3 +85,4 @@ class ImageLogger(commands.Cog):
                 color=discord.Color.purple()  # Set embed color to purple
             )
             await ctx.send(embed=embed)
+ 
