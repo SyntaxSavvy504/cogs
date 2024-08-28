@@ -16,12 +16,14 @@ class Manager(commands.Cog):
         default_global = {
             "stock": {},
             "log_channel_id": None,
-            "purchase_history": {}
+            "purchase_history": {},
+            "restock_threshold": 5,  # Default threshold for restock alerts
         }
         self.config.register_global(**default_global)
         default_server = {
             "stock": {},
-            "purchase_history": {}
+            "purchase_history": {},
+            "admin_roles": [],  # Roles with access to admin commands
         }
         self.config.register_guild(**default_server)
 
@@ -39,6 +41,35 @@ class Manager(commands.Cog):
 
     def generate_uuid(self):
         return str(uuid.uuid4())[:4].upper()
+
+    async def check_admin(self, ctx):
+        """Check if the user has admin permissions."""
+        admin_roles = await self.config.guild(ctx.guild).admin_roles()
+        return any(role.id in admin_roles for role in ctx.author.roles)
+
+    @commands.command()
+    @commands.has_permissions(administrator=True)
+    async def addadmin(self, ctx, role: discord.Role):
+        """Add a role that has admin permissions for commands."""
+        admin_roles = await self.config.guild(ctx.guild).admin_roles()
+        if role.id not in admin_roles:
+            admin_roles.append(role.id)
+            await self.config.guild(ctx.guild).admin_roles.set(admin_roles)
+            await ctx.send(f"Role {role.name} added as admin.")
+        else:
+            await ctx.send(f"Role {role.name} is already an admin.")
+
+    @commands.command()
+    @commands.has_permissions(administrator=True)
+    async def removeadmin(self, ctx, role: discord.Role):
+        """Remove a role's admin permissions."""
+        admin_roles = await self.config.guild(ctx.guild).admin_roles()
+        if role.id in admin_roles:
+            admin_roles.remove(role.id)
+            await self.config.guild(ctx.guild).admin_roles.set(admin_roles)
+            await ctx.send(f"Role {role.name} removed from admin.")
+        else:
+            await ctx.send(f"Role {role.name} is not an admin.")
 
     @commands.command()
     async def deliver(self, ctx, member: discord.Member, product: str, quantity: int, price: float, *, custom_text: str):
@@ -110,6 +141,10 @@ class Manager(commands.Cog):
                 purchase_history[str(member.id)].append(purchase_record)
                 await self.config.guild(ctx.guild).purchase_history.set(purchase_history)
 
+                # Check stock level for restock alert
+                if guild_stock[product]['quantity'] <= await self.config.global().restock_threshold():
+                    await self.send_restock_alert(ctx, product, guild_stock[product]['quantity'])
+
             except discord.Forbidden as e:
                 await ctx.send(f"Failed to deliver the product `{product}` to {member.mention}. Reason: {str(e)}")
         else:
@@ -132,24 +167,34 @@ class Manager(commands.Cog):
             amount_inr = info['price']
             usd_exchange_rate = 83.2  # Exchange rate from INR to USD
             amount_usd = amount_inr / usd_exchange_rate
+            expiration = info.get('expiration', 'None')
             embed.add_field(
                 name=f"{idx}. {product} {info.get('emoji', '')}",
-                value=f"> **Quantity:** {info['quantity']}\n> **Price:** ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)",
+                value=f"> **Quantity:** {info['quantity']}\n> **Price:** ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)\n> **Expiration:** {expiration}\n> **Discount:** {info.get('discount', 'None')}",
                 inline=False
             )
 
         await ctx.send(embed=embed)
 
     @commands.command()
-    async def addproduct(self, ctx, product: str, quantity: int, price: float, emoji: str):
-        """Add a product to the stock."""
+    @commands.has_permissions(administrator=True)
+    async def setrestockthreshold(self, ctx, threshold: int):
+        """Set the threshold for restock alerts."""
+        await self.config.global().restock_threshold.set(threshold)
+        await ctx.send(f"Restock threshold set to {threshold}.")
+
+    @commands.command()
+    async def addproduct(self, ctx, product: str, quantity: int, price: float, emoji: str, discount: float = 0.0, *, expiration: str = None):
+        """Add a product to the stock with optional discount and expiration date."""
         guild_stock = await self.config.guild(ctx.guild).stock()
         if product in guild_stock:
             guild_stock[product]['quantity'] += quantity
             guild_stock[product]['price'] = price
             guild_stock[product]['emoji'] = emoji
+            guild_stock[product]['discount'] = discount
+            guild_stock[product]['expiration'] = expiration
         else:
-            guild_stock[product] = {"quantity": quantity, "price": price, "emoji": emoji}
+            guild_stock[product] = {"quantity": quantity, "price": price, "emoji": emoji, "discount": discount, "expiration": expiration}
         await self.config.guild(ctx.guild).stock.set(guild_stock)
         embed = discord.Embed(
             title="Product Added",
@@ -170,66 +215,20 @@ class Manager(commands.Cog):
             value=f"> ₹{price:.2f} (INR) / ${price / 83.2:.2f} (USD)",
             inline=False
         )
+        embed.add_field(
+            name="Discount",
+            value=f"> {discount * 100:.2f}%",
+            inline=False
+        )
+        embed.add_field(
+            name="Expiration",
+            value=f"> {expiration if expiration else 'None'}",
+            inline=False
+        )
         await ctx.send(embed=embed)
 
         # Log the addition
-        await self.log_event(ctx, f"Added {quantity}x {product} to the stock at ₹{price:.2f} (INR) / ${price / 83.2:.2f} (USD)")
-
-        # Update Product Command
-
-        @commands.command()
-async def editproduct(self, ctx, old_product_name: str, new_product_name: str = None, new_price: float = None):
-    """Edit the name and/or price of an existing product."""
-    guild_stock = await self.config.guild(ctx.guild).stock()
-
-    if old_product_name not in guild_stock:
-        await ctx.send(f"Product `{old_product_name}` not found in stock.")
-        return
-
-    if new_product_name:
-        if new_product_name in guild_stock:
-            await ctx.send(f"Product `{new_product_name}` already exists in stock.")
-            return
-        guild_stock[new_product_name] = guild_stock.pop(old_product_name)
-        guild_stock[new_product_name]['name'] = new_product_name
-
-    if new_price is not None:
-        guild_stock[new_product_name or old_product_name]['price'] = new_price
-
-    await self.config.guild(ctx.guild).stock.set(guild_stock)
-
-    embed = discord.Embed(
-        title="Product Updated",
-        color=discord.Color.orange()
-    )
-    embed.add_field(
-        name="Old Product Name",
-        value=f"> {old_product_name}",
-        inline=False
-    )
-    if new_product_name:
-        embed.add_field(
-            name="New Product Name",
-            value=f"> {new_product_name}",
-            inline=False
-        )
-    if new_price is not None:
-        embed.add_field(
-            name="New Price",
-            value=f"> ₹{new_price:.2f} (INR) / ${new_price / 83.2:.2f} (USD)",
-            inline=False
-        )
-
-    await ctx.send(embed=embed)
-
-    # Log the product update
-    log_message = f"Updated product `{old_product_name}`"
-    if new_product_name:
-        log_message += f" to `{new_product_name}`"
-    if new_price is not None:
-        log_message += f" with a new price of ₹{new_price:.2f} (INR) / ${new_price / 83.2:.2f} (USD)"
-    await self.log_event(ctx, log_message)
-
+        await self.log_event(ctx, f"Added {quantity}x {product} to the stock at ₹{price:.2f} (INR) / ${price / 83.2:.2f} (USD) with a discount of {discount * 100:.2f}%")
 
     @commands.command()
     async def removeproduct(self, ctx, product: str):
@@ -343,3 +342,19 @@ async def editproduct(self, ctx, old_product_name: str, new_product_name: str = 
         """Set the log channel for logging events."""
         await self.config.guild(ctx.guild).log_channel_id.set(channel.id)
         await ctx.send(f"Log channel set to {channel.mention}.")
+
+    async def send_restock_alert(self, ctx, product: str, quantity: int):
+        """Send an alert to the admins when stock is low."""
+        log_channel_id = await self.config.guild(ctx.guild).log_channel_id()
+        if log_channel_id:
+            log_channel = self.bot.get_channel(log_channel_id)
+            if log_channel:
+                embed = discord.Embed(
+                    title="Stock Alert",
+                    description=f"The stock for `{product}` is running low. Current quantity: {quantity}.",
+                    color=discord.Color.red(),
+                    timestamp=datetime.now()
+                )
+                await log_channel.send(embed=embed)
+        else:
+            await ctx.send("Log channel not set. Use `setlogchannel` to set one.")
