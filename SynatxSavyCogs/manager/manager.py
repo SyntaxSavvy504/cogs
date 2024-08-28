@@ -175,6 +175,62 @@ class Manager(commands.Cog):
         # Log the addition
         await self.log_event(ctx, f"Added {quantity}x {product} to the stock at ₹{price:.2f} (INR) / ${price / 83.2:.2f} (USD)")
 
+        # Update Product Command
+
+        @commands.command()
+async def editproduct(self, ctx, old_product_name: str, new_product_name: str = None, new_price: float = None):
+    """Edit the name and/or price of an existing product."""
+    guild_stock = await self.config.guild(ctx.guild).stock()
+
+    if old_product_name not in guild_stock:
+        await ctx.send(f"Product `{old_product_name}` not found in stock.")
+        return
+
+    if new_product_name:
+        if new_product_name in guild_stock:
+            await ctx.send(f"Product `{new_product_name}` already exists in stock.")
+            return
+        guild_stock[new_product_name] = guild_stock.pop(old_product_name)
+        guild_stock[new_product_name]['name'] = new_product_name
+
+    if new_price is not None:
+        guild_stock[new_product_name or old_product_name]['price'] = new_price
+
+    await self.config.guild(ctx.guild).stock.set(guild_stock)
+
+    embed = discord.Embed(
+        title="Product Updated",
+        color=discord.Color.orange()
+    )
+    embed.add_field(
+        name="Old Product Name",
+        value=f"> {old_product_name}",
+        inline=False
+    )
+    if new_product_name:
+        embed.add_field(
+            name="New Product Name",
+            value=f"> {new_product_name}",
+            inline=False
+        )
+    if new_price is not None:
+        embed.add_field(
+            name="New Price",
+            value=f"> ₹{new_price:.2f} (INR) / ${new_price / 83.2:.2f} (USD)",
+            inline=False
+        )
+
+    await ctx.send(embed=embed)
+
+    # Log the product update
+    log_message = f"Updated product `{old_product_name}`"
+    if new_product_name:
+        log_message += f" to `{new_product_name}`"
+    if new_price is not None:
+        log_message += f" with a new price of ₹{new_price:.2f} (INR) / ${new_price / 83.2:.2f} (USD)"
+    await self.log_event(ctx, log_message)
+
+
     @commands.command()
     async def removeproduct(self, ctx, product: str):
         """Remove a product from the stock."""
