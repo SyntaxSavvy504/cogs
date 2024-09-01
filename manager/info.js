@@ -287,3 +287,6 @@
 
 // def setup(bot):
 //     bot.add_cog(Manager(bot))
+
+
+// not updated version
