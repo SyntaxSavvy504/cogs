@@ -1,5 +1,5 @@
 import discord
-from redbot.core import commands, Config
+from redbot.core import commands, app_commands, Config
 import uuid
 import json
 import os
@@ -39,42 +39,35 @@ class Manager(commands.Cog):
         ist = timezone('Asia/Kolkata')
         return datetime.now(ist).strftime("%Y-%m-%d %H:%M:%S")
 
-    async def is_allowed(ctx):
-        roles = await ctx.cog.config.restricted_roles()
+    async def is_allowed(self, interaction: discord.Interaction) -> bool:
+        roles = await self.config.restricted_roles()
         if not roles:
             return True
-        return any(role.id in roles for role in ctx.author.roles)
+        return any(role.id in roles for role in interaction.user.roles)
 
-    async def has_grant_permissions(ctx):
-        return any(role.id in await ctx.cog.config.grant_permissions() for role in ctx.author.roles)
+    async def has_grant_permissions(self, interaction: discord.Interaction) -> bool:
+        return any(role.id in await self.config.grant_permissions() for role in interaction.user.roles)
 
     def generate_uuid(self):
         return str(uuid.uuid4())[:4].upper()
 
-    @commands.slash_command()
-    async def deliver(
-        self,
-        ctx: discord.ApplicationContext,
-        member: discord.Member,
-        product: str,
-        quantity: int,
-        price: float,
-        custom_text: str
-    ):
+    @app_commands.command(name="deliver")
+    @app_commands.describe(member="The member to deliver the product to", product="The product being delivered", quantity="The quantity of the product", price="The price per product", custom_text="Custom message for the product")
+    async def deliver(self, interaction: discord.Interaction, member: discord.Member, product: str, quantity: int, price: float, *, custom_text: str):
         """Deliver a product to a member with a custom message and vouch text."""
-        guild_stock = await self.config.guild(ctx.guild).stock()
+        guild_stock = await self.config.guild(interaction.guild).stock()
 
         if product in guild_stock and guild_stock[product]['quantity'] >= quantity:
             # Prompt for vouch text
             def check(msg):
-                return msg.author == ctx.author and msg.channel == ctx.channel
+                return msg.author == interaction.user and msg.channel == interaction.channel
 
-            await ctx.respond("Please enter the vouch text:")
+            await interaction.response.send_message("Please enter the vouch text:")
             try:
                 vouch_msg = await self.bot.wait_for('message', timeout=60.0, check=check)
                 vouch_text = vouch_msg.content
             except asyncio.TimeoutError:
-                await ctx.respond("You took too long to respond. Delivery cancelled.")
+                await interaction.response.send_message("You took too long to respond. Delivery cancelled.")
                 return
 
             # Prepare the embed
@@ -103,43 +96,43 @@ class Manager(commands.Cog):
             dm_channel = member.dm_channel or await member.create_dm()
             try:
                 await dm_channel.send(embed=embed)
-                await ctx.respond(f"Product `{product}` delivered to {member.mention} via DM at {self.get_ist_time()}")
+                await interaction.response.send_message(f"Product `{product}` delivered to {member.mention} via DM at {self.get_ist_time()}")
 
                 # Deduct the quantity from server-specific stock
                 guild_stock[product]['quantity'] -= quantity
                 if guild_stock[product]['quantity'] <= 0:
                     del guild_stock[product]
-                await self.config.guild(ctx.guild).stock.set(guild_stock)
+                await self.config.guild(interaction.guild).stock.set(guild_stock)
 
                 # Log the delivery
-                await self.log_event(ctx, f"Delivered {quantity}x {product} to {member.mention} at ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)")
+                await self.log_event(interaction, f"Delivered {quantity}x {product} to {member.mention} at ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)")
 
                 # Record the purchase in history
-                purchase_history = await self.config.guild(ctx.guild).purchase_history()
+                purchase_history = await self.config.guild(interaction.guild).purchase_history()
                 purchase_record = {
                     "product": product,
                     "quantity": quantity,
                     "price": price,
                     "custom_text": custom_text,
                     "timestamp": purchase_date,
-                    "sold_by": ctx.author.name
+                    "sold_by": interaction.user.name
                 }
                 if str(member.id) not in purchase_history:
                     purchase_history[str(member.id)] = []
                 purchase_history[str(member.id)].append(purchase_record)
-                await self.config.guild(ctx.guild).purchase_history.set(purchase_history)
+                await self.config.guild(interaction.guild).purchase_history.set(purchase_history)
 
             except discord.Forbidden as e:
-                await ctx.respond(f"Failed to deliver the product `{product}` to {member.mention}. Reason: {str(e)}")
+                await interaction.response.send_message(f"Failed to deliver the product `{product}` to {member.mention}. Reason: {str(e)}")
         else:
-            await ctx.respond(f"Insufficient stock for `{product}`.")
+            await interaction.response.send_message(f"Insufficient stock for `{product}`.")
 
-    @commands.slash_command()
-    async def stock(self, ctx: discord.ApplicationContext):
+    @app_commands.command(name="stock")
+    async def stock(self, interaction: discord.Interaction):
         """Display available stock."""
-        guild_stock = await self.config.guild(ctx.guild).stock()
+        guild_stock = await self.config.guild(interaction.guild).stock()
         if not guild_stock:
-            await ctx.respond("No stock available.")
+            await interaction.response.send_message("No stock available.")
             return
 
         embed = discord.Embed(
@@ -157,27 +150,21 @@ class Manager(commands.Cog):
                 inline=False
             )
 
-        await ctx.respond(embed=embed)
+        await interaction.response.send_message(embed=embed)
 
-    @commands.slash_command()
-    @commands.check(is_allowed)
-    async def addproduct(
-        self, 
-        ctx: discord.ApplicationContext, 
-        product: str, 
-        quantity: int, 
-        price: float, 
-        emoji: str
-    ):
+    @app_commands.command(name="addproduct")
+    @app_commands.describe(product="The product to add", quantity="The quantity of the product", price="The price of the product", emoji="The emoji representing the product")
+    @app_commands.check(is_allowed)
+    async def addproduct(self, interaction: discord.Interaction, product: str, quantity: int, price: float, emoji: str):
         """Add a product to the stock."""
-        guild_stock = await self.config.guild(ctx.guild).stock()
+        guild_stock = await self.config.guild(interaction.guild).stock()
         if product in guild_stock:
             guild_stock[product]['quantity'] += quantity
             guild_stock[product]['price'] = price
             guild_stock[product]['emoji'] = emoji
         else:
             guild_stock[product] = {"quantity": quantity, "price": price, "emoji": emoji}
-        await self.config.guild(ctx.guild).stock.set(guild_stock)
+        await self.config.guild(interaction.guild).stock.set(guild_stock)
         embed = discord.Embed(
             title="Product Added",
             color=discord.Color.teal()
@@ -197,22 +184,23 @@ class Manager(commands.Cog):
             value=f"> ₹{price:.2f} (INR) / ${price / 83.2:.2f} (USD)",
             inline=False
         )
-        await ctx.respond(embed=embed)
+        await interaction.response.send_message(embed=embed)
 
         # Log the addition
-        await self.log_event(ctx, f"Added {quantity}x {product} to the stock at ₹{price:.2f} (INR) / ${price / 83.2:.2f} (USD)")
+        await self.log_event(interaction, f"Added {quantity}x {product} to the stock at ₹{price:.2f} (INR) / ${price / 83.2:.2f} (USD)")
 
-    @commands.slash_command()
-    @commands.check(is_allowed)
-    async def removeproduct(self, ctx: discord.ApplicationContext, product: str):
+    @app_commands.command(name="removeproduct")
+    @app_commands.describe(product="The product to remove")
+    @app_commands.check(is_allowed)
+    async def removeproduct(self, interaction: discord.Interaction, product: str):
         """Remove a product from the stock."""
-        guild_stock = await self.config.guild(ctx.guild).stock()
+        guild_stock = await self.config.guild(interaction.guild).stock()
         if product not in guild_stock:
-            await ctx.respond(f"{product} not found in stock.")
+            await interaction.response.send_message(f"{product} not found in stock.")
             return
 
         del guild_stock[product]
-        await self.config.guild(ctx.guild).stock.set(guild_stock)
+        await self.config.guild(interaction.guild).stock.set(guild_stock)
 
         embed = discord.Embed(
             title="Product Removed",
@@ -223,22 +211,23 @@ class Manager(commands.Cog):
             value=f"> {product}",
             inline=False
         )
-        await ctx.respond(embed=embed)
+        await interaction.response.send_message(embed=embed)
 
         # Log the removal
-        await self.log_event(ctx, f"Removed {product} from the stock")
+        await self.log_event(interaction, f"Removed {product} from the stock")
 
-    @commands.slash_command()
-    async def viewhistory(self, ctx: discord.ApplicationContext, member: discord.Member = None):
+    @app_commands.command(name="viewhistory")
+    @app_commands.describe(member="The member whose purchase history you want to view")
+    async def viewhistory(self, interaction: discord.Interaction, member: discord.Member = None):
         """View purchase history for a user."""
         if member is None:
-            member = ctx.author
+            member = interaction.user
 
-        purchase_history = await self.config.guild(ctx.guild).purchase_history()
+        purchase_history = await self.config.guild(interaction.guild).purchase_history()
         history = purchase_history.get(str(member.id), [])
 
         if not history:
-            await ctx.respond("No purchase history found for this user.")
+            await interaction.response.send_message("No purchase history found for this user.")
             return
 
         embed = discord.Embed(
@@ -251,9 +240,9 @@ class Manager(commands.Cog):
                 value=f"> **Price:** ₹{record['price']:.2f} (INR)\n> **Purchased on:** {record['timestamp']}\n> **Sold by:** {record['sold_by']}\n> **Custom Text:** {record['custom_text']}",
                 inline=False
             )
-        await ctx.respond(embed=embed)
+        await interaction.response.send_message(embed=embed)
 
-    async def log_event(self, ctx: discord.ApplicationContext, message: str):
+    async def log_event(self, interaction: discord.Interaction, message: str):
         """Log the event to the log channel."""
         log_channel_id = await self.config.log_channel_id()
         if not log_channel_id:
@@ -267,36 +256,39 @@ class Manager(commands.Cog):
                 color=discord.Color.orange(),
                 timestamp=datetime.utcnow()
             )
-            embed.set_footer(text=f"Logged by {ctx.author.name}", icon_url=ctx.author.avatar.url if ctx.author.avatar else None)
+            embed.set_footer(text=f"Logged by {interaction.user.name}", icon_url=interaction.user.avatar.url if interaction.user.avatar else None)
             await log_channel.send(embed=embed)
 
-    @commands.slash_command()
-    async def setlogchannel(self, ctx: discord.ApplicationContext, channel: discord.TextChannel):
+    @app_commands.command(name="setlogchannel")
+    @app_commands.describe(channel="The channel to set for logging events")
+    async def setlogchannel(self, interaction: discord.Interaction, channel: discord.TextChannel):
         """Set the channel for logging events."""
         await self.config.log_channel_id.set(channel.id)
-        await ctx.respond(f"Log channel set to {channel.mention}")
+        await interaction.response.send_message(f"Log channel set to {channel.mention}")
 
-    @commands.slash_command()
-    async def restrictrole(self, ctx: discord.ApplicationContext, role: discord.Role):
+    @app_commands.command(name="restrictrole")
+    @app_commands.describe(role="The role to restrict bot usage")
+    async def restrictrole(self, interaction: discord.Interaction, role: discord.Role):
         """Restrict bot usage to a specific role."""
         restricted_roles = await self.config.restricted_roles()
         if role.id not in restricted_roles:
             restricted_roles.append(role.id)
             await self.config.restricted_roles.set(restricted_roles)
-            await ctx.respond(f"Role {role.name} has been added to the restriction list.")
+            await interaction.response.send_message(f"Role {role.name} has been added to the restriction list.")
         else:
-            await ctx.respond(f"Role {role.name} is already restricted.")
+            await interaction.response.send_message(f"Role {role.name} is already restricted.")
 
-    @commands.slash_command()
-    async def grantpermissions(self, ctx: discord.ApplicationContext, role: discord.Role):
+    @app_commands.command(name="grantpermissions")
+    @app_commands.describe(role="The role to grant special permissions")
+    async def grantpermissions(self, interaction: discord.Interaction, role: discord.Role):
         """Grant permissions to a specific role to use certain commands."""
         grant_permissions = await self.config.grant_permissions()
         if role.id not in grant_permissions:
             grant_permissions.append(role.id)
             await self.config.grant_permissions.set(grant_permissions)
-            await ctx.respond(f"Role {role.name} has been granted special permissions.")
+            await interaction.response.send_message(f"Role {role.name} has been granted special permissions.")
         else:
-            await ctx.respond(f"Role {role.name} already has special permissions.")
+            await interaction.response.send_message(f"Role {role.name} already has special permissions.")
 
 def setup(bot):
     bot.add_cog(Manager(bot))
