@@ -51,9 +51,15 @@ class Manager(commands.Cog):
     def generate_uuid(self):
         return str(uuid.uuid4())[:4].upper()
 
+    async def check_is_allowed(self, interaction: discord.Interaction) -> bool:
+        return await self.is_allowed(interaction)
+
+    async def check_has_grant_permissions(self, interaction: discord.Interaction) -> bool:
+        return await self.has_grant_permissions(interaction)
+
     @app_commands.command(name="deliver")
     @app_commands.describe(member="The member to deliver the product to", product="The product being delivered", quantity="The quantity of the product", price="The price per product", custom_text="Custom message for the product")
-    @app_commands.checks.check(lambda interaction: asyncio.run(Manager.is_allowed(self, interaction)))
+    @app_commands.check(check_is_allowed)
     async def deliver(self, interaction: discord.Interaction, member: discord.Member, product: str, quantity: int, price: float, *, custom_text: str):
         """Deliver a product to a member with a custom message and vouch text."""
         guild_stock = await self.config.guild(interaction.guild).stock()
@@ -155,7 +161,7 @@ class Manager(commands.Cog):
 
     @app_commands.command(name="addproduct")
     @app_commands.describe(product="The product to add", quantity="The quantity of the product", price="The price of the product", emoji="The emoji representing the product")
-    @app_commands.checks.check(lambda interaction: asyncio.run(Manager.is_allowed(self, interaction)))
+    @app_commands.check(check_is_allowed)
     async def addproduct(self, interaction: discord.Interaction, product: str, quantity: int, price: float, emoji: str):
         """Add a product to the stock."""
         guild_stock = await self.config.guild(interaction.guild).stock()
@@ -192,7 +198,7 @@ class Manager(commands.Cog):
 
     @app_commands.command(name="removeproduct")
     @app_commands.describe(product="The product to remove")
-    @app_commands.checks.check(lambda interaction: asyncio.run(Manager.is_allowed(self, interaction)))
+    @app_commands.check(check_is_allowed)
     async def removeproduct(self, interaction: discord.Interaction, product: str):
         """Remove a product from the stock."""
         guild_stock = await self.config.guild(interaction.guild).stock()
