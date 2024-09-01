@@ -28,7 +28,7 @@ class ImageLogger(commands.Cog):
                 for attachment in message.attachments:
                     embed.title = "Image Deleted"
                     embed.description = (f"**Sent by:** {message.author}\n"
-                                         f"**Deleted by:** {message.guild.me}\n"
+                                         f"**Deleted by:** {self.bot.user}\n"
                                          f"**Message Content:** {message.content}\n"
                                          f"**Timestamp:** {timestamp}")
                     embed.set_image(url=attachment.url)
@@ -49,7 +49,7 @@ class ImageLogger(commands.Cog):
                 if "http" in message.content:  # Check for links
                     embed.title = "Link Deleted"
                     embed.description = (f"**Sent by:** {message.author}\n"
-                                         f"**Deleted by:** {message.guild.me}\n"
+                                         f"**Deleted by:** {self.bot.user}\n"
                                          f"**Message Content:** {message.content}\n"
                                          f"**Timestamp:** {timestamp}")
                     embed.set_footer(text=f"Deleted in #{message.channel.name}", 
@@ -70,6 +70,3 @@ class ImageLogger(commands.Cog):
         """Set the channel for logging deleted images and links."""
         await self.config.log_channel_id.set(channel.id)
         await ctx.send(f"Log channel set to {channel.mention}")
-
-def setup(bot):
-    bot.add_cog(ImageLogger(bot))
