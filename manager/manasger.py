@@ -126,8 +126,6 @@ class Manager(commands.Cog):
         else:
             await ctx.send(f"Insufficient stock for `{product}`.")
 
-    # Other commands like stock, addproduct, removeproduct, etc.
-
     @commands.command()
     async def stock(self, ctx):
         """Display available stock."""
@@ -154,9 +152,12 @@ class Manager(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.command()
-    @commands.check(is_allowed)
     async def addproduct(self, ctx, product: str, quantity: int, price: float, emoji: str):
         """Add a product to the stock."""
+        if not await self.is_allowed(ctx):
+            await ctx.send("You do not have permission to use this command.")
+            return
+
         guild_stock = await self.config.guild(ctx.guild).stock()
         if product in guild_stock:
             guild_stock[product]['quantity'] += quantity
@@ -190,9 +191,12 @@ class Manager(commands.Cog):
         await self.log_event(ctx, f"Added {quantity}x {product} to the stock at ₹{price:.2f} (INR) / ${price / 83.2:.2f} (USD)")
 
     @commands.command()
-    @commands.check(is_allowed)
     async def removeproduct(self, ctx, product: str):
         """Remove a product from the stock."""
+        if not await self.is_allowed(ctx):
+            await ctx.send("You do not have permission to use this command.")
+            return
+
         guild_stock = await self.config.guild(ctx.guild).stock()
         if product not in guild_stock:
             await ctx.send(f"{product} not found in stock.")
