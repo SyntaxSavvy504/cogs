@@ -2,11 +2,10 @@ import discord
 from redbot.core import commands
 from pymongo import MongoClient
 import uuid
-import json
-import os
 from datetime import datetime
 from pytz import timezone
 import asyncio
+import time
 
 class Manager(commands.Cog):
     """Manage product delivery and stock."""
@@ -37,6 +36,12 @@ class Manager(commands.Cog):
         ist = timezone('Asia/Kolkata')
         return datetime.now(ist).strftime("%Y-%m-%d %H:%M:%S")
 
+    def measure_latency(self, func, *args, **kwargs):
+        start_time = time.time()
+        result = func(*args, **kwargs)
+        latency = time.time() - start_time
+        return result, latency
+
     @staticmethod
     async def is_allowed(ctx):
         roles = ctx.cog.settings_collection.find_one({'_id': 'global'})['restricted_roles']
@@ -54,7 +59,7 @@ class Manager(commands.Cog):
     @commands.command()
     async def deliver(self, ctx, member: discord.Member, product: str, quantity: int, price: float, *, custom_text: str):
         """Deliver a product to a member with a custom message and vouch text."""
-        guild_stock = self.stock_collection.find_one({'guild_id': str(ctx.guild.id)})
+        guild_stock, stock_latency = self.measure_latency(self.stock_collection.find_one, {'guild_id': str(ctx.guild.id)})
 
         if guild_stock and product in guild_stock.get('products', {}):
             product_info = guild_stock['products'][product]
@@ -92,6 +97,7 @@ class Manager(commands.Cog):
                 embed.add_field(name="__Vouch Format__", value=f"```{vouch_text}```", inline=False)
                 embed.set_footer(text=f"__Thanks for order. No vouch, no warranty__")
                 embed.set_image(url="https://media.discordapp.net/attachments/1271370383735394357/1271370426655703142/931f5b68a813ce9d437ec11b04eec649.jpg")
+                embed.set_thumbnail(url=self.bot.user.avatar.url if self.bot.user.avatar else None)
 
                 # Try to send the embed to the user's DM
                 dm_channel = member.dm_channel or await member.create_dm()
@@ -103,13 +109,13 @@ class Manager(commands.Cog):
                     product_info['quantity'] -= quantity
                     if product_info['quantity'] <= 0:
                         del guild_stock['products'][product]
-                    self.stock_collection.update_one(
+                    update_result, update_latency = self.measure_latency(self.stock_collection.update_one,
                         {'guild_id': str(ctx.guild.id)},
                         {'$set': {'products': guild_stock.get('products', {})}}
                     )
 
                     # Log the delivery
-                    await self.log_event(ctx, f"Delivered {quantity}x {product} to {member.mention} at ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)")
+                    await self.log_event(ctx, f"Delivered {quantity}x {product} to {member.mention} at ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD). Stock update latency: {update_latency:.4f}s. MongoDB find latency: {stock_latency:.4f}s")
 
                     # Record the purchase in history
                     purchase_record = {
@@ -120,11 +126,13 @@ class Manager(commands.Cog):
                         "timestamp": purchase_date,
                         "sold_by": ctx.author.name
                     }
-                    self.purchase_history_collection.update_one(
+                    history_update_result, history_update_latency = self.measure_latency(self.purchase_history_collection.update_one,
                         {'guild_id': str(ctx.guild.id), 'user_id': str(member.id)},
                         {'$push': {'history': purchase_record}},
                         upsert=True
                     )
+
+                    await self.log_event(ctx, f"Purchase record updated. MongoDB update latency: {history_update_latency:.4f}s")
 
                 except discord.Forbidden as e:
                     await ctx.send(f"Failed to deliver the product `{product}` to {member.mention}. Reason: {str(e)}")
@@ -136,7 +144,7 @@ class Manager(commands.Cog):
     @commands.command()
     async def stock(self, ctx):
         """Display available stock."""
-        guild_stock = self.stock_collection.find_one({'guild_id': str(ctx.guild.id)})
+        guild_stock, stock_latency = self.measure_latency(self.stock_collection.find_one, {'guild_id': str(ctx.guild.id)})
 
         if not guild_stock or 'products' not in guild_stock:
             await ctx.send("No stock available.")
@@ -146,6 +154,7 @@ class Manager(commands.Cog):
             title="Available Stock",
             color=discord.Color.green()
         )
+        embed.set_author(name="Frenzy Store", icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None)
 
         for idx, (product, info) in enumerate(guild_stock['products'].items(), start=1):
             amount_inr = info['price']
@@ -158,12 +167,13 @@ class Manager(commands.Cog):
             )
 
         await ctx.send(embed=embed)
+        await ctx.send(f"MongoDB query latency: {stock_latency:.4f}s")
 
     @commands.command()
     @commands.check(is_allowed)
     async def addproduct(self, ctx, product: str, quantity: int, price: float, emoji: str):
         """Add a product to the stock."""
-        guild_stock = self.stock_collection.find_one({'guild_id': str(ctx.guild.id)}) or {'products': {}}
+        guild_stock, stock_latency = self.measure_latency(self.stock_collection.find_one, {'guild_id': str(ctx.guild.id)}) or {'products': {}}
 
         if product in guild_stock['products']:
             guild_stock['products'][product]['quantity'] += quantity
@@ -172,7 +182,7 @@ class Manager(commands.Cog):
         else:
             guild_stock['products'][product] = {"quantity": quantity, "price": price, "emoji": emoji}
 
-        self.stock_collection.update_one(
+        update_result, update_latency = self.measure_latency(self.stock_collection.update_one,
             {'guild_id': str(ctx.guild.id)},
             {'$set': {'products': guild_stock['products']}},
             upsert=True
@@ -182,6 +192,7 @@ class Manager(commands.Cog):
             title="Product Added",
             color=discord.Color.teal()
         )
+        embed.set_author(name="Frenzy Store", icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None)
         embed.add_field(
             name="Product",
             value=f"> {product} {emoji}",
@@ -198,22 +209,23 @@ class Manager(commands.Cog):
             inline=False
         )
         await ctx.send(embed=embed)
+        await ctx.send(f"MongoDB update latency: {update_latency:.4f}s")
 
         # Log the addition
-        await self.log_event(ctx, f"Added {quantity}x {product} to the stock at ₹{price:.2f} (INR) / ${price / 83.2:.2f} (USD)")
+        await self.log_event(ctx, f"Added {quantity}x {product} to the stock at ₹{price:.2f} (INR) / ${price / 83.2:.2f} (USD). Stock update latency: {update_latency:.4f}s")
 
     @commands.command()
     @commands.check(is_allowed)
     async def removeproduct(self, ctx, product: str):
         """Remove a product from the stock."""
-        guild_stock = self.stock_collection.find_one({'guild_id': str(ctx.guild.id)})
+        guild_stock, stock_latency = self.measure_latency(self.stock_collection.find_one, {'guild_id': str(ctx.guild.id)})
 
         if not guild_stock or 'products' not in guild_stock or product not in guild_stock['products']:
             await ctx.send(f"{product} not found in stock.")
             return
 
         del guild_stock['products'][product]
-        self.stock_collection.update_one(
+        update_result, update_latency = self.measure_latency(self.stock_collection.update_one,
             {'guild_id': str(ctx.guild.id)},
             {'$set': {'products': guild_stock.get('products', {})}}
         )
@@ -222,15 +234,17 @@ class Manager(commands.Cog):
             title="Product Removed",
             color=discord.Color.red()
         )
+        embed.set_author(name="Frenzy Store", icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None)
         embed.add_field(
             name="Product",
             value=f"> {product}",
             inline=False
         )
         await ctx.send(embed=embed)
+        await ctx.send(f"MongoDB update latency: {update_latency:.4f}s")
 
         # Log the removal
-        await self.log_event(ctx, f"Removed {product} from the stock")
+        await self.log_event(ctx, f"Removed {product} from the stock. Stock update latency: {update_latency:.4f}s")
 
     @commands.command()
     async def viewhistory(self, ctx, member: discord.Member = None):
@@ -238,7 +252,7 @@ class Manager(commands.Cog):
         if member is None:
             member = ctx.author
 
-        purchase_history = self.purchase_history_collection.find_one({'guild_id': str(ctx.guild.id), 'user_id': str(member.id)})
+        purchase_history, history_latency = self.measure_latency(self.purchase_history_collection.find_one, {'guild_id': str(ctx.guild.id), 'user_id': str(member.id)})
 
         if not purchase_history or 'history' not in purchase_history:
             await ctx.send("No purchase history found for this user.")
@@ -248,6 +262,7 @@ class Manager(commands.Cog):
             title=f"Purchase History for {member.name}",
             color=discord.Color.blue()
         )
+        embed.set_author(name="Frenzy Store", icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None)
         for record in purchase_history['history']:
             embed.add_field(
                 name=f"{record['product']} (x{record['quantity']})",
@@ -255,6 +270,7 @@ class Manager(commands.Cog):
                 inline=False
             )
         await ctx.send(embed=embed)
+        await ctx.send(f"MongoDB query latency: {history_latency:.4f}s")
 
     async def log_event(self, ctx, message):
         """Log the event to the log channel."""
