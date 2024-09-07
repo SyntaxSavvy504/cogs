@@ -39,21 +39,14 @@ class Manager(commands.Cog):
         ist = timezone('Asia/Kolkata')
         return datetime.now(ist).strftime("%Y-%m-%d %H:%M:%S")
 
-    async def is_allowed(self, ctx):
-        """Check if the user is allowed to perform restricted actions."""
-        if isinstance(ctx.author, discord.Member):
-            roles = await self.config.restricted_roles()
-            if not roles:
-                return True
-            return any(role.id in roles for role in ctx.author.roles)
-        return False
+    async def is_allowed(ctx):
+        roles = await ctx.cog.config.restricted_roles()
+        if not roles:
+            return True
+        return any(role.id in roles for role in ctx.author.roles)
 
-    async def has_grant_permissions(self, ctx):
-        """Check if the user has grant permissions."""
-        if isinstance(ctx.author, discord.Member):
-            grant_permissions = await self.config.grant_permissions()
-            return any(role.id in grant_permissions for role in ctx.author.roles)
-        return False
+    async def has_grant_permissions(ctx):
+        return any(role.id in await ctx.cog.config.grant_permissions() for role in ctx.author.roles)
 
     def generate_uuid(self):
         return str(uuid.uuid4())[:4].upper()
@@ -133,6 +126,8 @@ class Manager(commands.Cog):
         else:
             await ctx.send(f"Insufficient stock for `{product}`.")
 
+    # Other commands like stock, addproduct, removeproduct, etc.
+
     @commands.command()
     async def stock(self, ctx):
         """Display available stock."""
@@ -159,12 +154,9 @@ class Manager(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.command()
+    @commands.check(is_allowed)
     async def addproduct(self, ctx, product: str, quantity: int, price: float, emoji: str):
         """Add a product to the stock."""
-        if not await self.is_allowed(ctx):
-            await ctx.send("You do not have permission to use this command.")
-            return
-
         guild_stock = await self.config.guild(ctx.guild).stock()
         if product in guild_stock:
             guild_stock[product]['quantity'] += quantity
@@ -198,12 +190,9 @@ class Manager(commands.Cog):
         await self.log_event(ctx, f"Added {quantity}x {product} to the stock at ₹{price:.2f} (INR) / ${price / 83.2:.2f} (USD)")
 
     @commands.command()
+    @commands.check(is_allowed)
     async def removeproduct(self, ctx, product: str):
         """Remove a product from the stock."""
-        if not await self.is_allowed(ctx):
-            await ctx.send("You do not have permission to use this command.")
-            return
-
         guild_stock = await self.config.guild(ctx.guild).stock()
         if product not in guild_stock:
             await ctx.send(f"{product} not found in stock.")
@@ -226,80 +215,75 @@ class Manager(commands.Cog):
         # Log the removal
         await self.log_event(ctx, f"Removed {product} from the stock")
 
+    @commands.command()
+    async def viewhistory(self, ctx, member: discord.Member = None):
+        """View purchase history for a user."""
+        if member is None:
+            member = ctx.author
+
+        purchase_history = await self.config.guild(ctx.guild).purchase_history()
+        history = purchase_history.get(str(member.id), [])
+
+        if not history:
+            await ctx.send("No purchase history found for this user.")
+            return
+
+        embed = discord.Embed(
+            title=f"Purchase History for {member.name}",
+            color=discord.Color.blue()
+        )
+        for record in history:
+            embed.add_field(
+                name=f"{record['product']} (x{record['quantity']})",
+                value=f"> **Price:** ₹{record['price']:.2f} (INR)\n> **Purchased on:** {record['timestamp']}\n> **Sold by:** {record['sold_by']}\n> **Custom Text:** {record['custom_text']}",
+                inline=False
+            )
+        await ctx.send(embed=embed)
+
     async def log_event(self, ctx, message):
-        """Log events to a specified channel."""
+        """Log the event to the log channel."""
         log_channel_id = await self.config.log_channel_id()
-        if log_channel_id:
-            channel = self.bot.get_channel(log_channel_id)
-            if channel:
-                embed = discord.Embed(
-                    title="__Event Log__",
-                    description=message,
-                    color=discord.Color.blue()
-                )
-                embed.set_footer(text=f"Timestamp: {self.get_ist_time()}")
-                await channel.send(embed=embed)
+        if not log_channel_id:
+            return
+
+        log_channel = self.bot.get_channel(log_channel_id)
+        if log_channel:
+            embed = discord.Embed(
+                title="Event Log",
+                description=message,
+                color=discord.Color.orange(),
+                timestamp=datetime.utcnow()
+            )
+            embed.set_footer(text=f"Logged by {ctx.author.name}", icon_url=ctx.author.avatar.url if ctx.author.avatar else None)
+            await log_channel.send(embed=embed)
 
     @commands.command()
     async def setlogchannel(self, ctx, channel: discord.TextChannel):
-        """Set the log channel."""
-        if not await self.is_allowed(ctx):
-            await ctx.send("You do not have permission to use this command.")
-            return
-
+        """Set the channel for logging events."""
         await self.config.log_channel_id.set(channel.id)
         await ctx.send(f"Log channel set to {channel.mention}")
 
     @commands.command()
     async def restrictrole(self, ctx, role: discord.Role):
-        """Add a role to the restricted roles list."""
-        if not await self.is_allowed(ctx):
-            await ctx.send("You do not have permission to use this command.")
-            return
-
-        roles = await self.config.restricted_roles()
-        if role.id not in roles:
-            roles.append(role.id)
-            await self.config.restricted_roles.set(roles)
-            await ctx.send(f"Role {role.name} added to restricted roles.")
+        """Restrict bot usage to a specific role."""
+        restricted_roles = await self.config.restricted_roles()
+        if role.id not in restricted_roles:
+            restricted_roles.append(role.id)
+            await self.config.restricted_roles.set(restricted_roles)
+            await ctx.send(f"Role {role.name} has been added to the restriction list.")
         else:
-            await ctx.send(f"Role {role.name} is already in the restricted roles list.")
+            await ctx.send(f"Role {role.name} is already restricted.")
 
     @commands.command()
-    async def grantrole(self, ctx, role: discord.Role):
-        """Add a role to the grant permissions list."""
-        if not await self.is_allowed(ctx):
-            await ctx.send("You do not have permission to use this command.")
-            return
-
+    async def grantpermissions(self, ctx, role: discord.Role):
+        """Grant permissions to a specific role to use certain commands."""
         grant_permissions = await self.config.grant_permissions()
         if role.id not in grant_permissions:
             grant_permissions.append(role.id)
             await self.config.grant_permissions.set(grant_permissions)
-            await ctx.send(f"Role {role.name} added to grant permissions list.")
+            await ctx.send(f"Role {role.name} has been granted special permissions.")
         else:
-            await ctx.send(f"Role {role.name} is already in the grant permissions list.")
+            await ctx.send(f"Role {role.name} already has special permissions.")
 
-    @commands.command()
-    async def purchasehistory(self, ctx, member: discord.Member):
-        """View purchase history for a member."""
-        purchase_history = await self.config.guild(ctx.guild).purchase_history()
-        member_history = purchase_history.get(str(member.id), [])
-        if not member_history:
-            await ctx.send(f"No purchase history found for {member.mention}.")
-            return
-
-        embed = discord.Embed(
-            title=f"Purchase History for {member}",
-            color=discord.Color.orange()
-        )
-
-        for record in member_history:
-            purchase_date = record.get("timestamp", "N/A")
-            embed.add_field(
-                name=f"Product: {record['product']}",
-                value=f"> **Quantity:** {record['quantity']}\n> **Price:** ₹{record['price']:.2f} (INR)\n> **Custom Text:** {record['custom_text']}\n> **Date:** {purchase_date}",
-                inline=False
-            )
-
-        await ctx.send(embed=embed)
+def setup(bot):
+    bot.add_cog(Manager(bot))
