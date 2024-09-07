@@ -37,14 +37,16 @@ class Manager(commands.Cog):
         ist = timezone('Asia/Kolkata')
         return datetime.now(ist).strftime("%Y-%m-%d %H:%M:%S")
 
-    async def is_allowed(self, ctx):
-        roles = self.settings_collection.find_one({'_id': 'global'})['restricted_roles']
+    @staticmethod
+    async def is_allowed(ctx):
+        roles = ctx.cog.settings_collection.find_one({'_id': 'global'})['restricted_roles']
         if not roles:
             return True
         return any(role.id in roles for role in ctx.author.roles)
 
-    async def has_grant_permissions(self, ctx):
-        return any(role.id in self.settings_collection.find_one({'_id': 'global'})['grant_permissions'] for role in ctx.author.roles)
+    @staticmethod
+    async def has_grant_permissions(ctx):
+        return any(role.id in ctx.cog.settings_collection.find_one({'_id': 'global'})['grant_permissions'] for role in ctx.author.roles)
 
     def generate_uuid(self):
         return str(uuid.uuid4())[:4].upper()
