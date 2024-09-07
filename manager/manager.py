@@ -299,6 +299,24 @@ class Manager(commands.Cog):
         await ctx.send(f"Log channel set to {channel.mention}")
 
     @commands.command()
+    @commands.check(is_allowed)
+    async def setprice(self, ctx, product: str, price: float):
+        """Set or update the price of a specific product."""
+        guild_stock = self.stock_collection.find_one({'guild_id': str(ctx.guild.id)})
+
+        if guild_stock and product in guild_stock.get('products', {}):
+            guild_stock['products'][product]['price'] = price
+            self.stock_collection.update_one(
+                {'guild_id': str(ctx.guild.id)},
+                {'$set': {'products': guild_stock['products']}}
+            )
+            await ctx.send(f"The price of `{product}` has been updated to ₹{price:.2f}.")
+            await self.log_event(ctx, f"Price of `{product}` updated to ₹{price:.2f}.")
+        else:
+            await ctx.send(f"No product found with the name `{product}`.")
+
+
+    @commands.command()
     async def restrictrole(self, ctx, role: discord.Role):
         """Restrict bot usage to a specific role."""
         self.settings_collection.update_one(
