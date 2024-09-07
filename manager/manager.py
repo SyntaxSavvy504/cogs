@@ -115,7 +115,7 @@ class Manager(commands.Cog):
                     )
 
                     # Log the delivery
-                    await self.log_event(ctx, f"Delivered {quantity}x {product} to {member.mention} at ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD). Stock update latency: {update_latency:.4f}s. MongoDB find latency: {stock_latency:.4f}s")
+                    await self.log_event(ctx, f"Delivered {quantity}x {product} to {member.mention} at ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD).\nStock update latency: {update_latency:.4f}s\nMongoDB find latency: {stock_latency:.4f}s")
 
                     # Record the purchase in history
                     purchase_record = {
@@ -132,7 +132,7 @@ class Manager(commands.Cog):
                         upsert=True
                     )
 
-                    await self.log_event(ctx, f"Purchase record updated. MongoDB update latency: {history_update_latency:.4f}s")
+                    await self.log_event(ctx, f"Purchase record updated.\nMongoDB update latency: {history_update_latency:.4f}s")
 
                 except discord.Forbidden as e:
                     await ctx.send(f"Failed to deliver the product `{product}` to {member.mention}. Reason: {str(e)}")
@@ -212,7 +212,7 @@ class Manager(commands.Cog):
         await ctx.send(f"MongoDB update latency: {update_latency:.4f}s")
 
         # Log the addition
-        await self.log_event(ctx, f"Added {quantity}x {product} to the stock at ₹{price:.2f} (INR) / ${price / 83.2:.2f} (USD). Stock update latency: {update_latency:.4f}s")
+        await self.log_event(ctx, f"Added {quantity}x {product} to the stock at ₹{price:.2f} (INR) / ${price / 83.2:.2f} (USD).\nStock update latency: {update_latency:.4f}s")
 
     @commands.command()
     @commands.check(is_allowed)
@@ -244,7 +244,7 @@ class Manager(commands.Cog):
         await ctx.send(f"MongoDB update latency: {update_latency:.4f}s")
 
         # Log the removal
-        await self.log_event(ctx, f"Removed {product} from the stock. Stock update latency: {update_latency:.4f}s")
+        await self.log_event(ctx, f"Removed {product} from the stock.\nStock update latency: {update_latency:.4f}s")
 
     @commands.command()
     async def viewhistory(self, ctx, member: discord.Member = None):
