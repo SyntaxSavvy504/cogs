@@ -94,7 +94,7 @@ class Manager(commands.Cog):
                 embed.add_field(name="__Purchase Date__", value=f"> {purchase_date}", inline=False)
                 embed.add_field(name="\u200b", value="**- Follow our [TOS](https://discord.com/channels/911622571856891934/911629489325355049) & be a smart buyer!\n- [CLICK HERE](https://discord.com/channels/911622571856891934/1134197532868739195) to leave your __feedback__**", inline=False)
                 embed.add_field(name="__Product info and credentials__", value=f"||```{custom_text}```||", inline=False)
-                embed.add_field(name="__Vouch Format__", value=f"```{vouch_text}```", inline=False)
+                embed.add_field(name="__Vouch Format__", value=f"`{vouch_text}`", inline=False)
                 embed.set_footer(text=f"Thanks for order. No vouch, no warranty")
                 embed.set_image(url="https://media.discordapp.net/attachments/1271370383735394357/1271370426655703142/931f5b68a813ce9d437ec11b04eec649.jpg")
                 embed.set_thumbnail(url=self.bot.user.avatar.url if self.bot.user.avatar else None)
