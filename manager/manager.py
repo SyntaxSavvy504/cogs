@@ -161,10 +161,14 @@ class Manager(commands.Cog):
             usd_exchange_rate = 83.2  # Exchange rate from INR to USD
             amount_usd = amount_inr / usd_exchange_rate
             embed.add_field(
-                name=f"{idx}. {product} {info.get('emoji', '')}",
-                value=f"> **Quantity:** {info['quantity']}\n> **Price:** ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)",
+                name=f"**{idx}.** `{product}` {info.get('emoji', '')}",
+                value=(
+                    f"**Quantity:** `{info['quantity']}`\n"
+                    f"**Price:** `₹{amount_inr:.2f}` (INR) / `${amount_usd:.2f}` (USD)"
+                ),
                 inline=False
             )
+
 
         await ctx.send(embed=embed)
         await ctx.send(f"Successfully fetched data from the database:\n`Latency: {stock_latency:.4f}s`")
