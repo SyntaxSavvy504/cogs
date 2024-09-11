@@ -24,6 +24,10 @@ class FiveMPlayerCog(commands.Cog):
             response.raise_for_status()  # Raise an exception for HTTP errors
             data = response.json()
             
+            # Log or print the raw response data for debugging
+            print("Raw response data:", data)
+
+            # Adjust according to actual response structure
             if 'players' in data:
                 if data['players']:
                     player_list = "\n".join([f"{player['id']}: {player['name']}" for player in data['players']])
