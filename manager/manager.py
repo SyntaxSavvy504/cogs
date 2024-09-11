@@ -103,7 +103,9 @@ class Manager(commands.Cog):
                 dm_channel = member.dm_channel or await member.create_dm()
                 try:
                     await dm_channel.send(embed=embed)
-                    await ctx.send(f"Product `{product}` delivered to {member.mention} via DM at {self.get_ist_time()}")
+                   await ctx.send(f"✅ **Product Delivered:**\n"f"```\n1. {product}\n```\n"f"📤 **Recipient:**\n"f"```\n2. {member.mention}\n```\n"f"📩 **Delivery Method:**\n"f"```\n3. Direct Message\n```\n"f"📅 **Delivery Time:**\n"f"```\n4. {self.get_ist_time()}\n```")
+
+
 
                     # Deduct the quantity from server-specific stock
                     product_info['quantity'] -= quantity
