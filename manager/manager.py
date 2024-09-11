@@ -297,7 +297,7 @@ class Manager(commands.Cog):
             embed = discord.Embed(
                 title="Event Log",
                 description=message,
-                color=discord.Color.orange(),
+                color=discord.Color.green(),
                 timestamp=datetime.utcnow()
             )
             embed.set_footer(text=f"Logged by {ctx.author.name}", icon_url=ctx.author.avatar.url if ctx.author.avatar else None)
