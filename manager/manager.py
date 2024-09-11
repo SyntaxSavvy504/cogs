@@ -132,7 +132,7 @@ class Manager(commands.Cog):
                         upsert=True
                     )
 
-                    await self.log_event(ctx, f"Purchase record updated.\nMongoDB update latency: {history_update_latency:.4f}s")
+                    await self.log_event(ctx, f"Purchase record updated.\nMongoDB Database Updated: {history_update_latency:.4f}s")
 
                 except discord.Forbidden as e:
                     await ctx.send(f"Failed to deliver the product `{product}` to {member.mention}. Reason: {str(e)}")
@@ -167,7 +167,7 @@ class Manager(commands.Cog):
             )
 
         await ctx.send(embed=embed)
-        await ctx.send(f"MongoDB query latency: {stock_latency:.4f}s")
+        await ctx.send(f"Updated Database : {stock_latency:.4f}s")
 
     @commands.command()
     @commands.check(is_allowed)
