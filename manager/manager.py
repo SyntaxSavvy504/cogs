@@ -103,7 +103,7 @@ class Manager(commands.Cog):
                 dm_channel = member.dm_channel or await member.create_dm()
                 try:
                     await dm_channel.send(embed=embed)
-                   await ctx.send(f"✅ **Product Delivered:**\n"f"```\n1. {product}\n```\n"f"📤 **Recipient:**\n"f"```\n2. {member.mention}\n```\n"f"📩 **Delivery Method:**\n"f"```\n3. Direct Message\n```\n"f"📅 **Delivery Time:**\n"f"```\n4. {self.get_ist_time()}\n```")
+                    await ctx.send(f"✅ **Product Delivered:**\n```\n1. {product}\n```\n📤 **Recipient:**\n```\n2. {member.mention}\n```\n📩 **Delivery Method:**\n```\n3. Direct Message\n```\n📅 **Delivery Time:**\n```\n4. {self.get_ist_time()}\n```")
 
 
 
