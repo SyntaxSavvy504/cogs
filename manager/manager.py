@@ -265,11 +265,8 @@ class Manager(commands.Cog):
         embed.set_author(name="Frenzy Store", icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None)
         for record in purchase_history['history']:
             embed.add_field(
-                name=f"`🛒 {record['product']}` (x{record['quantity']})",
-                    f"1. **Price:** `₹{record['price']:.2f}` (INR)\n"
-    f"2. **Purchased On:** `{record['timestamp']}`\n"
-    f"3. **Sold By:** `{record['sold_by']}`\n"
-    f"4. **Custom Text:** `{record['custom_text']}`",
+                name=f"`🛒 {record['product']}` (x{record['quantity']})`",
+                value=f"> **Price:** ₹{record['price']:.2f} (INR)\n> **Purchased on:** {record['timestamp']}\n> **Sold by:** {record['sold_by']}\n> **Custom Text:** {record['custom_text']}",
                 inline=False
             )
         await ctx.send(embed=embed)
