@@ -115,7 +115,8 @@ class Manager(commands.Cog):
                     )
 
                     # Log the delivery
-                    await self.log_event(ctx, f"Delivered {quantity}x {product} to {member.mention} at ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD).\nStock update latency: {update_latency:.4f}s\nMongoDB find latency: {stock_latency:.4f}s")
+                    await self.log_event(ctx, f"🛒 **Delivered Product:** `{quantity}x {product}`\n📩 **Recipient:** {member.mention}\n💰 **Amount:** `₹{amount_inr:.2f}` (INR) / `${amount_usd:.2f}` (USD)\n⏱️ **Stock Update Latency:** `{update_latency:.4f}s`\n🗄️ **MongoDB Find Latency:** `{stock_latency:.4f}s`")
+
 
                     # Record the purchase in history
                     purchase_record = {
