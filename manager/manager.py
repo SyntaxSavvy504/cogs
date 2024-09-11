@@ -259,7 +259,7 @@ class Manager(commands.Cog):
             return
 
         embed = discord.Embed(
-            title=f"Purchase History for {member.name}",
+            title=f"```📜 Detailed Purchase History for {member.name}```",
             color=discord.Color.blue()
         )
         embed.set_author(name="Frenzy Store", icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None)
