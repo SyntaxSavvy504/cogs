@@ -246,31 +246,45 @@ class Manager(commands.Cog):
         # Log the removal
         await self.log_event(ctx, f"Removed {product} from the stock.\nStock update latency: {update_latency:.4f}s")
 
-    @commands.command()
-    async def viewhistory(self, ctx, member: discord.Member = None):
-        """View purchase history for a user."""
-        if member is None:
-            member = ctx.author
+@commands.command()
+async def viewhistory(self, ctx, member: discord.Member = None):
+    """View purchase history for a user."""
+    if member is None:
+        member = ctx.author
 
-        purchase_history, history_latency = self.measure_latency(self.purchase_history_collection.find_one, {'guild_id': str(ctx.guild.id), 'user_id': str(member.id)})
+    purchase_history, history_latency = self.measure_latency(self.purchase_history_collection.find_one, {'guild_id': str(ctx.guild.id), 'user_id': str(member.id)})
 
-        if not purchase_history or 'history' not in purchase_history:
-            await ctx.send("No purchase history found for this user.")
-            return
+    if not purchase_history or 'history' not in purchase_history:
+        await ctx.send("No purchase history found for this user.")
+        return
 
-        embed = discord.Embed(
-            title=f"Purchase History for {member.name}",
-            color=discord.Color.blue()
+    embed = discord.Embed(
+        title=f"Purchase History for {member.name}",
+        color=discord.Color.blue()
+    )
+    embed.set_author(name="Frenzy Store", icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None)
+    embed.set_footer(text=f"Data fetched in {history_latency:.4f}s")
+
+    for record in purchase_history['history']:
+        embed.add_field(
+            name=f"{record['product']} (x{record['quantity']})",
+            value=f"> **Price:** ₹{record['price']:.2f} (INR)\n> **Purchased on:** {record['timestamp']}\n> **Sold by:** {record['sold_by']}\n> **Custom Text:** {record['custom_text']}",
+            inline=False
         )
-        embed.set_author(name="Frenzy Store", icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None)
-        for record in purchase_history['history']:
-            embed.add_field(
-                name=f"{record['product']} (x{record['quantity']})",
-                value=f"> **Price:** ₹{record['price']:.2f} (INR)\n> **Purchased on:** {record['timestamp']}\n> **Sold by:** {record['sold_by']}\n> **Custom Text:** {record['custom_text']}",
-                inline=False
-            )
-        await ctx.send(embed=embed)
-        await ctx.send(f"MongoDB query latency: {history_latency:.4f}s")
+
+    # Send the embed
+    await ctx.send(embed=embed)
+    
+    # Send a separate message with latency information
+    latency_embed = discord.Embed(
+        title="Database Fetch Status",
+        description=f"✅ Successfully fetched data from the database.",
+        color=discord.Color.green()
+    )
+    latency_embed.add_field(name="MongoDB Latency", value=f"`{history_latency:.4f}s`", inline=False)
+    
+    await ctx.send(embed=latency_embed)
+
 
     async def log_event(self, ctx, message):
         """Log the event to the log channel."""
