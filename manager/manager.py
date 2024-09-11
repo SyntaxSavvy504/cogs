@@ -266,7 +266,7 @@ class Manager(commands.Cog):
         for record in purchase_history['history']:
             embed.add_field(
                 name=f"`🛒 {record['product']}` (x{record['quantity']})`",
-                value=f"> **Price:** ₹{record['price']:.2f} (INR)\n> **Purchased on:** {record['timestamp']}\n> **Sold by:** {record['sold_by']}\n> **Custom Text:** {record['custom_text']}",
+                value=f"> **1.Price:** ₹{record['price']:.2f} (INR)\n> **2.Purchased on:** {record['`timestamp`']}\n> **3.Sold by:** {record['sold_by']}\n> **4.Custom Text:** {record['```custom_text```']}",
                 inline=False
             )
         await ctx.send(embed=embed)
