@@ -167,7 +167,7 @@ class Manager(commands.Cog):
             )
 
         await ctx.send(embed=embed)
-        await ctx.send(f"✅ Successfully fetched data from the database:\n```Latency: {stock_latency:.4f}s```")
+        await ctx.send(f"✅ Successfully fetched data from the database:\n`Latency: {stock_latency:.4f}s`")
 
     @commands.command()
     @commands.check(is_allowed)
