@@ -117,7 +117,7 @@ class Manager(commands.Cog):
                     )
 
                     # Log the delivery
-                    await self.log_event(ctx, f"🛒 **Delivered Product:**\n```1. Product: {quantity}x {product}\n```\n📩 **Recipient:**\n```2. {member.mention}\n```\n💰 **Amount:**\n```3. ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)\n```\n⏱️ **Stock Update Latency:**\n```4. {update_latency:.4f}s\n```\n🗄️ **MongoDB Find Latency:**\n```5. {stock_latency:.4f}s\n```")
+                    await self.log_event(ctx, f"🛒 **Delivered Product:**\n> `1. Product: {quantity}x {product}\n   Price: ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)\n   Timestamp: {self.get_ist_time()}`\n📩 **Recipient:**\n> `2. {member.mention}`\n⏱️ **Stock Update Latency:**\n> `3. {update_latency:.4f}s`\n🗄️ **MongoDB Find Latency:**\n> `4. {stock_latency:.4f}s`")
 
 
 
