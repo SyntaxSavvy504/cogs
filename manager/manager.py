@@ -263,12 +263,19 @@ class Manager(commands.Cog):
             color=discord.Color.blue()
         )
         embed.set_author(name="Frenzy Store", icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None)
+
         for record in purchase_history['history']:
             embed.add_field(
-                name=f"`🛒 {record['product']}` (x{record['quantity']})`",
-                value=f"> **1.Price:** ₹{record['price']:.2f} (INR)\n> **2.Purchased on:** {record['timestamp`']}\n> **3.Sold by:** {record['sold_by']}\n> **4.Custom Text:** {record['custom_text']}",
+                name=f"🛒 `{record['product']}` (x{record['quantity']})",
+                value=(
+                    f"1. **Price:** `₹{record['price']:.2f}` (INR)\n"
+                    f"2. **Purchased On:** `{record['timestamp']}`\n"
+                    f"3. **Sold By:** `{record['sold_by']}`\n"
+                    f"4. **Custom Text:** `{record['custom_text']}`"
+                ),
                 inline=False
             )
+
         await ctx.send(embed=embed)
         await ctx.send(f"Successfully fetched data from the database! Latency: `{history_latency:.4f}s`")
 
