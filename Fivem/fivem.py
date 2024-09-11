@@ -5,7 +5,7 @@ import requests
 class FiveMPlayerCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.server_ip = "127.0.0.1"  # Default IP
+        self.server_ip = "51.68.164.141"  # Default IP
         self.server_port = 30120      # Default port
 
     @commands.command(name="setserver")
