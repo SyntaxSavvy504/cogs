@@ -332,6 +332,36 @@ class Manager(commands.Cog):
         else:
             await ctx.send(f"No product found with the name `{product}`.")
 
+    @commands.command()
+async def userswithpurchases(self, ctx):
+    """List all users who have made purchases."""
+    history, history_latency = self.measure_latency(self.purchase_history_collection.find, {'guild_id': str(ctx.guild.id)})
+
+    if not history:
+        await ctx.send("No purchase history found.")
+        return
+
+    user_list = set()
+    for record in history:
+        user_list.add(record['user_id'])
+
+    if not user_list:
+        await ctx.send("No users found with purchase history.")
+        return
+
+    users = [ctx.guild.get_member(int(user_id)) for user_id in user_list]
+    user_mentions = [user.mention for user in users if user]
+
+    embed = discord.Embed(
+        title="Users with Purchase History",
+        description="\n".join(user_mentions),
+        color=discord.Color.purple()
+    )
+    embed.set_author(name="Frenzy Store", icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None)
+
+    await ctx.send(embed=embed)
+    await ctx.send(f"Successfully fetched user data from the database! Latency: `{history_latency:.4f}s`")
+
 
     @commands.command()
     async def restrictrole(self, ctx, role: discord.Role):
