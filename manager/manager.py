@@ -68,12 +68,12 @@ class Manager(commands.Cog):
                 def check(msg):
                     return msg.author == ctx.author and msg.channel == ctx.channel
 
-                await ctx.send("Please enter the vouch text:")
+                await ctx.send("> Please enter the vouch text you have 60 sec")
                 try:
                     vouch_msg = await self.bot.wait_for('message', timeout=60.0, check=check)
                     vouch_text = vouch_msg.content
                 except asyncio.TimeoutError:
-                    await ctx.send("You took too long to respond. Delivery cancelled.")
+                    await ctx.send("> You took too long to respond. Delivery cancelled.")
                     return
 
                 # Prepare the embed
