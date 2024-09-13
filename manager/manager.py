@@ -57,94 +57,82 @@ class Manager(commands.Cog):
         return str(uuid.uuid4())[:4].upper()
 
     @commands.command()
-    async def deliver(self, ctx, member: discord.Member, product: str, quantity: int, price: float, *, custom_text: str):
-        """Deliver a product to a member with a custom message and vouch text."""
-        guild_stock, stock_latency = self.measure_latency(self.stock_collection.find_one, {'guild_id': str(ctx.guild.id)})
+async def deliver(self, ctx, member: discord.Member, product: str, quantity: int, price: float, *, custom_text: str):
+    """Deliver a product to a member with a predefined vouch format."""
+    guild_stock, stock_latency = self.measure_latency(self.stock_collection.find_one, {'guild_id': str(ctx.guild.id)})
 
-        if guild_stock and product in guild_stock.get('products', {}):
-            product_info = guild_stock['products'][product]
-            if product_info['quantity'] >= quantity:
-                # Prompt for vouch text
-                def check(msg):
-                    return msg.author == ctx.author and msg.channel == ctx.channel
+    if guild_stock and product in guild_stock.get('products', {}):
+        product_info = guild_stock['products'][product]
+        if product_info['quantity'] >= quantity:
+            # Predefined vouch format based on product details
+            uuid_code = self.generate_uuid()
+            purchase_date = self.get_ist_time()
 
-                await ctx.send("> Please enter the vouch text you have 60 seconds left.")
-                try:
-                    vouch_msg = await self.bot.wait_for('message', timeout=60.0, check=check)
-                    vouch_text = vouch_msg.content
-                except asyncio.TimeoutError:
-                    await ctx.send("> You took too long to respond. Delivery cancelled.")
-                    return
+            amount_inr = price * quantity
+            usd_exchange_rate = 83.2  # Exchange rate from INR to USD
+            amount_usd = amount_inr / usd_exchange_rate
 
-                # Prepare the embed
-                uuid_code = self.generate_uuid()
-                purchase_date = self.get_ist_time()
+            # Generate the predefined vouch format
+            vouch_text = f"+rep @{ctx.author.name} x{quantity} {product} for {amount_inr:.2f} INR"
 
-                amount_inr = price * quantity
-                usd_exchange_rate = 83.2  # Exchange rate from INR to USD
-                amount_usd = amount_inr / usd_exchange_rate
+            # Prepare the embed
+            embed = discord.Embed(
+                title="__Frenzy Store__",
+                color=discord.Color.purple()
+            )
+            embed.set_author(name="Frenzy Store", icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None)
+            embed.add_field(name="__Here is your product__", value=f"> {product} {product_info.get('emoji', '')}", inline=False)
+            embed.add_field(name="__Amount__", value=f"> ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)", inline=False)
+            embed.add_field(name="__Purchase Date__", value=f"> {purchase_date}", inline=False)
+            embed.add_field(name="\u200b", value="**- Follow our [TOS](https://discord.com/channels/911622571856891934/911629489325355049) & be a smart buyer!\n- [CLICK HERE](https://discord.com/channels/911622571856891934/1134197532868739195) to leave your __feedback__**", inline=False)
+            embed.add_field(name="__Product info and credentials__", value=f"||```{custom_text}```||", inline=False)
+            embed.add_field(name="__Vouch Format__", value=f"`{vouch_text}`", inline=False)
+            embed.set_footer(text=f"Thanks for order. No vouch, no warranty")
+            embed.set_image(url="https://media.discordapp.net/attachments/1271370383735394357/1271370426655703142/931f5b68a813ce9d437ec11b04eec649.jpg")
+            embed.set_thumbnail(url=self.bot.user.avatar.url if self.bot.user.avatar else None)
 
-                embed = discord.Embed(
-                    title="__Frenzy Store__",
-                    color=discord.Color.purple()
+            # Try to send the embed to the user's DM
+            dm_channel = member.dm_channel or await member.create_dm()
+            try:
+                await dm_channel.send(embed=embed)
+                await ctx.send(f"✅ **Product Delivered:** {product}\n📤 **Recipient:** {member.mention}\n📩 **Delivery Method:** Direct Message\n📅 **Delivery Time:** {self.get_ist_time()}")
+
+                # Deduct the quantity from server-specific stock
+                product_info['quantity'] -= quantity
+                if product_info['quantity'] <= 0:
+                    del guild_stock['products'][product]
+                update_result, update_latency = self.measure_latency(self.stock_collection.update_one,
+                    {'guild_id': str(ctx.guild.id)},
+                    {'$set': {'products': guild_stock.get('products', {})}}
                 )
-                embed.set_author(name="Frenzy Store", icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None)
-                embed.add_field(name="__Here is your product__", value=f"> {product} {product_info.get('emoji', '')}", inline=False)
-                embed.add_field(name="__Amount__", value=f"> ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)", inline=False)
-                embed.add_field(name="__Purchase Date__", value=f"> {purchase_date}", inline=False)
-                embed.add_field(name="\u200b", value="**- Follow our [TOS](https://discord.com/channels/911622571856891934/911629489325355049) & be a smart buyer!\n- [CLICK HERE](https://discord.com/channels/911622571856891934/1134197532868739195) to leave your __feedback__**", inline=False)
-                embed.add_field(name="__Product info and credentials__", value=f"||```{custom_text}```||", inline=False)
-                embed.add_field(name="__Vouch Format__", value=f"`{vouch_text}`", inline=False)
-                embed.set_footer(text=f"Thanks for order. No vouch, no warranty")
-                embed.set_image(url="https://media.discordapp.net/attachments/1271370383735394357/1271370426655703142/931f5b68a813ce9d437ec11b04eec649.jpg")
-                embed.set_thumbnail(url=self.bot.user.avatar.url if self.bot.user.avatar else None)
 
-                # Try to send the embed to the user's DM
-                dm_channel = member.dm_channel or await member.create_dm()
-                try:
-                    await dm_channel.send(embed=embed)
-                    await ctx.send(f"✅ **Product Delivered:** {product}\n📤 **Recipient:** {member.mention}\n📩 **Delivery Method:** Direct Message\n📅 **Delivery Time:** {self.get_ist_time()}")
+                # Log the delivery
+                await self.log_event(ctx, f"🛒 **Delivered Product:**\n```1. Product: {quantity}x {product}\n```\n📩 **Recipient:**\n```2. {member.mention}\n```\n💰 **Amount:**\n```3. ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)\n```\n⏱️ **Stock Update Latency:**\n```4. {update_latency:.4f}s\n```\n🗄️ **MongoDB Find Latency:**\n```5. {stock_latency:.4f}s\n```")
 
+                # Record the purchase in history
+                purchase_record = {
+                    "product": product,
+                    "quantity": quantity,
+                    "price": price,
+                    "custom_text": custom_text,
+                    "timestamp": purchase_date,
+                    "sold_by": ctx.author.name
+                }
+                history_update_result, history_update_latency = self.measure_latency(self.purchase_history_collection.update_one,
+                    {'guild_id': str(ctx.guild.id), 'user_id': str(member.id)},
+                    {'$push': {'history': purchase_record}},
+                    upsert=True
+                )
 
+                await self.log_event(ctx, f"Purchase record updated.\nMongoDB Database Updated: {history_update_latency:.4f}s")
 
-                    # Deduct the quantity from server-specific stock
-                    product_info['quantity'] -= quantity
-                    if product_info['quantity'] <= 0:
-                        del guild_stock['products'][product]
-                    update_result, update_latency = self.measure_latency(self.stock_collection.update_one,
-                        {'guild_id': str(ctx.guild.id)},
-                        {'$set': {'products': guild_stock.get('products', {})}}
-                    )
-
-                    # Log the delivery
-                    await self.log_event(ctx, f"🛒 **Delivered Product:**\n```1. Product: {quantity}x {product}\n```\n📩 **Recipient:**\n```2. {member.mention}\n```\n💰 **Amount:**\n```3. ₹{amount_inr:.2f} (INR) / ${amount_usd:.2f} (USD)\n```\n⏱️ **Stock Update Latency:**\n```4. {update_latency:.4f}s\n```\n🗄️ **MongoDB Find Latency:**\n```5. {stock_latency:.4f}s\n```")
-
-
-
-
-                    # Record the purchase in history
-                    purchase_record = {
-                        "product": product,
-                        "quantity": quantity,
-                        "price": price,
-                        "custom_text": custom_text,
-                        "timestamp": purchase_date,
-                        "sold_by": ctx.author.name
-                    }
-                    history_update_result, history_update_latency = self.measure_latency(self.purchase_history_collection.update_one,
-                        {'guild_id': str(ctx.guild.id), 'user_id': str(member.id)},
-                        {'$push': {'history': purchase_record}},
-                        upsert=True
-                    )
-
-                    await self.log_event(ctx, f"Purchase record updated.\nMongoDB Database Updated: {history_update_latency:.4f}s")
-
-                except discord.Forbidden as e:
-                    await ctx.send(f"Failed to deliver the product `{product}` to {member.mention}. Reason: {str(e)}")
-            else:
-                await ctx.send(f"Insufficient stock for `{product}`.")
+            except discord.Forbidden as e:
+                await ctx.send(f"Failed to deliver the product `{product}` to {member.mention}. Reason: {str(e)}")
         else:
-            await ctx.send(f"No stock available for `{product}`.")
+            await ctx.send(f"Insufficient stock for `{product}`.")
+    else:
+        await ctx.send(f"No stock available for `{product}`.")
+
 
     @commands.command()
     async def stock(self, ctx):
